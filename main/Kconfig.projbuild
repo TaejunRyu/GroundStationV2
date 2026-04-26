@@ -1,0 +1,62 @@
+menu "Ground Station Configuration"
+
+    config GS_MAV_SYSID
+        int "System id of MAVLINK"
+        default 1
+        help 
+            Don't Change the Number
+
+    config GS_MAV_BRIDGE_COMPID
+        int "Component id of MAVLINK"
+        default 198
+        help 
+            MAV_COMP_ID_PAIRING_MANAGER : 198
+
+    config GS_MAV_DRONE_COMPID
+        int "Component id of MAVLINK"
+        default 1
+        help 
+            Don't Change the Number
+        
+    config GS_ESPNOW_CHANNEL
+        int "ESPNOW  Channel"
+        default 6
+        help 
+            Bridge channel equal the Drone Channel 
+
+    config GS_BRIDGE_MAC
+        string "Bridge MAC Address"
+        default "1C:DB:D4:AE:82:04"
+        help
+            Format: XX:XX:XX:XX:XX:XX
+
+    config GS_DRONE_MAC
+        string "Drone MAC Address"
+        default "B0:CB:D8:D7:2E:B0"
+        help
+            Format: XX:XX:XX:XX:XX:XX
+
+    config GS_TARGET_IP
+        string "Target IP Address"
+        default "192.168.4.2"
+        help
+            IP address of the QGC host.
+
+    config GS_UDP_PORT
+        int "UDP Port for QGC"
+        default 14550
+        help
+            QGroundControl standard port is 14550.
+
+    config GS_WIFI_SSID
+        string "Soft-AP SSID"
+        default "Ryu_ESP32_Drone"
+        help
+            The SSID of the Access Point.
+            
+    config GS_WIFI_PASSWORD
+        string "Soft-AP Password"
+        default "80044999"
+        help
+            Password for the Access Point.
+endmenu
