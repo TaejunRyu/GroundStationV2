@@ -131,7 +131,6 @@ esp_err_t BridgeCore::start() {
     // 데이터 수신 콜백 설정 (Wi-Fi와 Serial JTAG 모두)
     // Wi-Fi와 Serial JTAG에서 데이터가 들어왔을 때 on_data_received를 호출하도록 설정
     wifi_driver_->set_data_callback([this](const uint8_t* data, size_t len, Types::DataSource source) {on_data_received(data, len, source);});
-  
 
     // 타이머 콜백 설정 (Serial JTAG 폴링)  타이머는 100ms마다 on_timer_tick을 호출하도록 설정
     // 타이머는 단순히 callback함수를 실행시키는 서비스를 제공하므로, 타이머 서비스에서 on_timer_tick을 호출하도록 설정
@@ -154,7 +153,8 @@ esp_err_t BridgeCore::start() {
     }
 
     Types::EspNowConfig espnow_config = {};
-    memcpy(espnow_config.peer_mac, config_manager_->get_peer_mac().data(), sizeof(espnow_config.peer_mac));
+
+    memcpy(espnow_config.peer_mac, config_manager_->get_drone_mac().data(), sizeof(espnow_config.peer_mac));
     espnow_config.channel = CONFIG_GS_ESPNOW_CHANNEL;
     espnow_config.phy_mode = WIFI_PHY_MODE_11B;
     espnow_config.rate = WIFI_PHY_RATE_6M;
@@ -164,6 +164,9 @@ esp_err_t BridgeCore::start() {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
         return ret;
     }
+
+    wifi_driver_->register_espnow_callbacks(); // ESP-NOW 콜백 등록
+
 
     // UDP 초기화 및 수신 활성화
     ret = wifi_driver_->init_udp();
@@ -221,7 +224,7 @@ void BridgeCore::on_wifi_disconnected() {
  * @param source 
  */
 void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSource source) {
-    ESP_LOGD(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
+    //ESP_LOGI(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
 
     // Serial JTAG 또는 UDP에서 들어온 데이터는 ESP-NOW로 전송
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {

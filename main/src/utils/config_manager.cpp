@@ -59,7 +59,7 @@ esp_err_t ConfigManager::initialize() {
     ret = nvs_get_blob(nvs_handle, "drone_mac", drone_mac_, &mac_len);
     if (ret != ESP_OK) {
         // 기본값 설정 (환경변수나 하드코딩된 값 사용)
-        std::stringstream ss(CONFIG_GS_DRONE_MAC ? CONFIG_GS_DRONE_MAC : "00:00:00:00:00:00");
+        std::stringstream ss(CONFIG_GS_DRONE_MAC ? CONFIG_GS_DRONE_MAC : "B0:CB:D8:D7:2E:B0");
         std::string token;
         int i = 0;
         while (std::getline(ss, token, ':') && i < 6) {

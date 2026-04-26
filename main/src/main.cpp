@@ -74,17 +74,18 @@ void app_main(void) {
     }
 
     // 3. 로그 레벨 설정
-    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set("*", ESP_LOG_NONE);
     esp_log_level_set("MAIN", ESP_LOG_INFO);
-    esp_log_level_set("BRIDGE_CORE", ESP_LOG_MAX);
-    esp_log_level_set("WIFI", ESP_LOG_INFO);
     esp_log_level_set("MAVLINK", ESP_LOG_INFO);
     esp_log_level_set("TIMER", ESP_LOG_INFO);
     esp_log_level_set("UART", ESP_LOG_INFO);
     esp_log_level_set("FLYSKY", ESP_LOG_INFO);
     esp_log_level_set("ADC", ESP_LOG_INFO);
     esp_log_level_set("LED_STRIP", ESP_LOG_INFO);
-    esp_log_level_set("SERIAL_JTAG", ESP_LOG_MAX);
+
+    esp_log_level_set("WIFI_DRIVER", ESP_LOG_VERBOSE);
+    esp_log_level_set("SERIAL_JTAG", ESP_LOG_VERBOSE);
+    esp_log_level_set("BRIDGE_CORE", ESP_LOG_VERBOSE);
 
     // 4. NVS 초기화
     esp_err_t ret = nvs_flash_init();

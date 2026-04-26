@@ -197,10 +197,18 @@ esp_err_t WiFiDriver::init_espnow(const Types::EspNowConfig& config) {
         ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(ret));
         return ret;
     }
-
+  
+    
     // 드론 MAC 주소 저장
     memcpy(drone_mac_, config.peer_mac, sizeof(drone_mac_));
 
+    // drone_mac_[0] = 0xB0; 
+    // drone_mac_[1] = 0xCB; 
+    // drone_mac_[2] = 0xD8; 
+    // drone_mac_[3] = 0xD7; 
+    // drone_mac_[4] = 0x2E; 
+    // drone_mac_[5] = 0xB0;
+    
     // Peer 등록
     esp_now_peer_info_t peer_info = {};
     memcpy(peer_info.peer_addr, config.peer_mac, ESP_NOW_ETH_ALEN);
@@ -230,12 +238,17 @@ esp_err_t WiFiDriver::init_espnow(const Types::EspNowConfig& config) {
     ret = esp_now_set_peer_rate_config(config.peer_mac, &rate_config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "ESP-NOW rate config failed: %s", esp_err_to_name(ret));
+    }else{
+        ESP_LOGI(TAG, "Drone peer 등록 성공: %02x:%02x:%02x:%02x:%02x:%02x",
+                 config.peer_mac[0], config.peer_mac[1], config.peer_mac[2],
+                 config.peer_mac[3], config.peer_mac[4], config.peer_mac[5]);    
     }
-
     espnow_initialized_ = true;
     ESP_LOGI(TAG, "ESP-NOW initialized successfully");
     return ESP_OK;
 }
+
+
 /**
  * @brief 
  * UDP 초기화 함수
@@ -540,9 +553,8 @@ void WiFiDriver::wifi_event_handler(void* arg, esp_event_base_t event_base,
  */
 void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
     // BridgeCore 인스턴스를 통해 콜백 호출
+    ESP_LOGI(TAG, "ESP-NOW received %d bytes", len);
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-    
-    
     bridge.on_data_received(data, len, Types::DataSource::WIFI_ESPNOW);
     ESP_LOGD(TAG, "ESP-NOW received %d bytes", len);
 }
