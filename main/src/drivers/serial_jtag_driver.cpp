@@ -164,12 +164,23 @@ esp_err_t SerialJtagDriver::start(void){
     return ESP_OK;        
 }
 
-
+void SerialJtagDriver::stop() {
+    if (running_ && serial_jtag_rx_task_handle_) {
+        ESP_LOGI(TAG, "Stopping USB Serial/JTAG RX Task...");
+        vTaskDelete(serial_jtag_rx_task_handle_);
+        serial_jtag_rx_task_handle_ = nullptr;
+        running_ = false;
+    }
+}
 
 
 /**
- * @brief Serial JTAG 드라이버 수신 태스크 (정적 멤버 함수)
- * 
+ * @brief 
+ *      1. Serial JTAG 드라이버 수신 태스크 (정적 멤버 함수)
+ *      2. FreeRTOS 태스크로 실행되며, this 포인터를 전달받아 인스턴스 멤버에 접근
+ *      3. 무한 루프에서 데이터를 수신하며, 수신된 데이터를 BridgeCore의 on_data_received() 메서드로 전달
+ *      4. 수신된 데이터는 event_queue_를 통해 비동기적으로 처리할 수도 있도록 설계 (현재는 직접 on_data_received 호출)
+ *      
  * @param arg this 포인터가 전달됨
  */
 void SerialJtagDriver::serial_jtag_rx_task_static(void* arg) {
@@ -185,7 +196,7 @@ void SerialJtagDriver::serial_jtag_rx_task_static(void* arg) {
             //ESP_LOGI(TAG, "Received %d bytes in RX task", actual_len);
             
             bridge.on_data_received(buffer, actual_len, Types::DataSource::UART_SERIAL);
-
+            
             // 수신된 데이터를 이벤트 큐에 전달
             //xQueueSend(driver->event_queue_, &actual_len, portMAX_DELAY);
         } else if (ret != ESP_OK) {

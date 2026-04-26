@@ -200,6 +200,7 @@ void BridgeCore::stop() {
 
         timer_service_->stop();
         wifi_driver_->stop();
+        serial_jtag_driver_->stop();
 
         system_state_ = Types::SystemState::SHUTDOWN;
         ESP_LOGI(TAG, "BridgeCore stopped");
@@ -247,13 +248,13 @@ void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSo
     }
 
     // // 큐에 데이터 추가
-    // esp_err_t ret = queue_manager_->enqueue_packet(data, len, Types::PacketType::RAW_DATA);
+    // esp_err_t ret = queue_manager_->enqueue_packet(data, len, source);
     // if (ret != ESP_OK) {
     //     ESP_LOGW(TAG, "Failed to enqueue packet");
     // }
 
     // MAVLink 처리
-    mavlink_service_->process_packet(data, len);
+    // mavlink_service_->process_packet(data, len);
 }
 
 

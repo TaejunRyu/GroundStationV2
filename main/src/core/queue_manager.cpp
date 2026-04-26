@@ -56,7 +56,7 @@ void QueueManager::deinitialize() {
     }
 }
 
-esp_err_t QueueManager::enqueue_packet(const uint8_t* data, size_t len, Types::PacketType type) {
+esp_err_t QueueManager::enqueue_packet(const uint8_t* data, size_t len, Types::DataSource source) {
     if (!packet_queue_ || len > MAX_MESSAGE_SIZE) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -67,8 +67,7 @@ esp_err_t QueueManager::enqueue_packet(const uint8_t* data, size_t len, Types::P
         return ESP_ERR_NO_MEM;
     }
 
-    message->type = type;
-    message->source = Types::DataSource::INTERNAL;  // 기본값
+    message->source = source;
     message->length = len;
     memcpy(message->data, data, len);
 
@@ -78,7 +77,7 @@ esp_err_t QueueManager::enqueue_packet(const uint8_t* data, size_t len, Types::P
         return ESP_ERR_TIMEOUT;
     }
 
-    ESP_LOGD(TAG, "Packet enqueued: type=%d, len=%d", static_cast<int>(type), len);
+    ESP_LOGD(TAG, "Packet enqueued: source=%d, len=%d", static_cast<int>(source), len);
     return ESP_OK;
 }
 
@@ -91,7 +90,7 @@ esp_err_t QueueManager::dequeue_packet(Types::QueueMessage** message, TickType_t
         return ESP_ERR_TIMEOUT;
     }
 
-    ESP_LOGD(TAG, "Packet dequeued: type=%d, len=%d", static_cast<int>((*message)->type), (*message)->length);
+    ESP_LOGD(TAG, "Packet dequeued: source=%d, len=%d", static_cast<int>((*message)->source), (*message)->length);
     return ESP_OK;
 }
 
@@ -125,7 +124,7 @@ esp_err_t QueueManager::dequeue_event(Types::EventData* event, TickType_t timeou
 size_t QueueManager::get_packet_queue_size() const {
     return packet_queue_ ? uxQueueMessagesWaiting(packet_queue_) : 0;
 }
-
+ 
 size_t QueueManager::get_event_queue_size() const {
     return event_queue_ ? uxQueueMessagesWaiting(event_queue_) : 0;
 }
@@ -135,7 +134,7 @@ Types::QueueMessage* QueueManager::allocate_message(size_t data_len) {
 
     // 대용량 데이터는 PSRAM 사용
     if (total_size > 1024) {
-        Types::QueueMessage* message = (Types::QueueMessage*)heap_caps_malloc(total_size, MALLOC_CAP_SPIRAM);
+        Types::QueueMessage* message = (Types::QueueMessage*)heap_caps_malloc(total_size, MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
         if (message) {
             ESP_LOGD(TAG, "Allocated %d bytes in PSRAM for message", total_size);
             return message;
@@ -155,7 +154,7 @@ Types::QueueMessage* QueueManager::allocate_message(size_t data_len) {
 
 void QueueManager::free_message(Types::QueueMessage* message) {
     if (message) {
-        free(message);
+        heap_caps_free(message);
         ESP_LOGD(TAG, "Message freed");
     }
 }

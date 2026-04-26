@@ -16,7 +16,7 @@ public:
     void deinitialize();
 
     // 패킷 큐잉
-    esp_err_t enqueue_packet(const uint8_t* data, size_t len, Types::PacketType type);
+    esp_err_t enqueue_packet(const uint8_t* data, size_t len, Types::DataSource source);
     esp_err_t dequeue_packet(Types::QueueMessage** message, TickType_t timeout = portMAX_DELAY);
 
     // 이벤트 큐잉

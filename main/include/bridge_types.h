@@ -85,14 +85,12 @@ struct EspNowEventData {
 // RC 전용 정적 구조체
 struct RcStaticPacket {
     size_t  length;
-    PacketType type;
     uint8_t data[64];
 } __attribute__((packed));
 
 // 큐 메시지 구조체 (가변 길이 데이터 지원)
 struct QueueMessage {
     size_t  length;
-    PacketType type;
     DataSource source;
     uint8_t data[];  // 가변 길이 배열
 } __attribute__((packed));
