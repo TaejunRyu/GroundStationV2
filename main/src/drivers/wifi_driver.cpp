@@ -553,7 +553,7 @@ void WiFiDriver::wifi_event_handler(void* arg, esp_event_base_t event_base,
  */
 void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
     // BridgeCore 인스턴스를 통해 콜백 호출
-    ESP_LOGI(TAG, "ESP-NOW received %d bytes", len);
+    //ESP_LOGI(TAG, "ESP-NOW received %d bytes", len);
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     bridge.on_data_received(data, len, Types::DataSource::WIFI_ESPNOW);
     ESP_LOGD(TAG, "ESP-NOW received %d bytes", len);

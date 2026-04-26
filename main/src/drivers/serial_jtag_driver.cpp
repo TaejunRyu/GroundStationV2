@@ -182,7 +182,7 @@ void SerialJtagDriver::serial_jtag_rx_task_static(void* arg) {
         size_t actual_len = 0;
         esp_err_t ret = driver->receive_data(buffer, driver->buffer_size_, actual_len, portMAX_DELAY);
         if (ret == ESP_OK && actual_len > 0) {
-            ESP_LOGI(TAG, "Received %d bytes in RX task", actual_len);
+            //ESP_LOGI(TAG, "Received %d bytes in RX task", actual_len);
             
             bridge.on_data_received(buffer, actual_len, Types::DataSource::UART_SERIAL);
 

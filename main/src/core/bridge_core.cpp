@@ -218,13 +218,14 @@ void BridgeCore::on_wifi_disconnected() {
 
 /**
  * @brief 
- *   serial jtag 또는 wifi udp에서 데이터가 들어왔을 때 esp-now로 전달
+ *  1. serial jtag 또는 wifi udp에서 데이터가 들어왔을 때 esp-now로 전달
+ *  2. esp-now에서 데이터가 들어왔을 때 serial jtag 또는 wifi udp로 전달    
  * @param data 
  * @param len 
  * @param source 
  */
 void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSource source) {
-    //ESP_LOGI(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
+    ESP_LOGI(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
 
     // Serial JTAG 또는 UDP에서 들어온 데이터는 ESP-NOW로 전송
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {
