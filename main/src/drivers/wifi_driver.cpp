@@ -606,7 +606,7 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
         process_buffer = (uint8_t*)p->payload;
     }
 
-    ESP_LOGI(TAG, "UDP received %d bytes from %s:%d", p->tot_len, ipaddr_ntoa(addr), port);
+    //ESP_LOGI(TAG, "UDP received %d bytes from %s:%d", p->tot_len, ipaddr_ntoa(addr), port);
 
 
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
