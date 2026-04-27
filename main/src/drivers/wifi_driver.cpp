@@ -607,26 +607,24 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
     }
 
     //ESP_LOGI(TAG, "UDP received %d bytes from %s:%d", p->tot_len, ipaddr_ntoa(addr), port);
-
-
-    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-    bridge.on_data_received(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
+    //Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+    //bridge.on_data_received(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
 
     
     // MAVLink 파싱 및 콜백 호출
-    // static mavlink_message_t msg;
-    // static mavlink_status_t status;
-    // static uint8_t temp_buffer[1024];
+    static mavlink_message_t msg;
+    static mavlink_status_t status;
+    static uint8_t temp_buffer[1024];
 
-    // for (size_t ii = 0; ii < p->tot_len; ii++) {
-    //     if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
-    //         int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
+    for (size_t ii = 0; ii < p->tot_len; ii++) {
+        if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
+            int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
 
-    //         if (driver->data_callback_) {
-    //             driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
-    //         }
-    //     }
-    // }
+            if (driver->data_callback_) {
+                driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
+            }
+        }
+    }
 
     pbuf_free(p);
 }
