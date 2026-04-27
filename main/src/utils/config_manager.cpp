@@ -54,16 +54,18 @@ esp_err_t ConfigManager::initialize() {
         return ret;
     }
 
-    // 드론 MAC 주소 읽기
+    // // 드론 MAC 주소 읽기
     size_t mac_len = sizeof(drone_mac_);
     ret = nvs_get_blob(nvs_handle, "drone_mac", drone_mac_, &mac_len);
     if (ret != ESP_OK) {
         // 기본값 설정 (환경변수나 하드코딩된 값 사용)
-        std::stringstream ss(CONFIG_GS_DRONE_MAC ? CONFIG_GS_DRONE_MAC : "B0:CB:D8:D7:2E:B0");
+        std::stringstream ss(CONFIG_GS_DRONE_MAC ? CONFIG_GS_DRONE_MAC : "00:00:00:00:00:00");
         std::string token;
         int i = 0;
         while (std::getline(ss, token, ':') && i < 6) {
-            std::istringstream(token) >> std::hex >> reinterpret_cast<int&>(drone_mac_[i]);
+            unsigned int hex_val = 0;
+            std::istringstream(token) >> std::hex >> hex_val;
+            drone_mac_[i] = static_cast<uint8_t>(hex_val & 0xFF);
             i++;
         }
         ESP_LOGI(TAG, "Using default drone MAC");
@@ -78,7 +80,9 @@ esp_err_t ConfigManager::initialize() {
         std::string token;
         int i = 0;
         while (std::getline(ss, token, ':') && i < 6) {
-            std::istringstream(token) >> std::hex >> reinterpret_cast<int&>(drone_mac_[i]);
+            unsigned int hex_val = 0;
+            std::istringstream(token) >> std::hex >> hex_val;
+            bridge_mac_[i] = static_cast<uint8_t>(hex_val & 0xFF);
             i++;
         }
         ESP_LOGI(TAG, "Using default bridge MAC");
@@ -125,22 +129,20 @@ void ConfigManager::set_bridge_mac(const uint8_t* mac) {
 }
 
 std::array<uint8_t, 6> ConfigManager::get_peer_mac() {
-    std::array<uint8_t, 6> mac;
-    memcpy(mac.data(), espnow_config_.peer_mac, sizeof(espnow_config_.peer_mac));
-    return mac;
+    return { espnow_config_.peer_mac[0], espnow_config_.peer_mac[1], espnow_config_.peer_mac[2], 
+             espnow_config_.peer_mac[3], espnow_config_.peer_mac[4], espnow_config_.peer_mac[5] };
 }
 
 std::array<uint8_t, 6> ConfigManager::get_drone_mac() {
-    std::array<uint8_t, 6> mac;
-    memcpy(mac.data(), drone_mac_, sizeof(drone_mac_));
-    return mac;
+    return { drone_mac_[0], drone_mac_[1], drone_mac_[2], 
+             drone_mac_[3], drone_mac_[4], drone_mac_[5] };
 }
 
 std::array<uint8_t, 6> ConfigManager::get_bridge_mac() {
-    std::array<uint8_t, 6> mac;
-    memcpy(mac.data(), bridge_mac_, sizeof(bridge_mac_));
-    return mac;
+    return { bridge_mac_[0], bridge_mac_[1], bridge_mac_[2], 
+             bridge_mac_[3], bridge_mac_[4], bridge_mac_[5] };
 }
+
 
 Types::WiFiConfig ConfigManager::get_wifi_config() {
     return wifi_config_;
@@ -163,7 +165,7 @@ void init_config() {
     ConfigManager::initialize();
 }
 
-uint8_t drone_mac[6];
+uint8_t drone_mac[6] ={0xB0, 0xCB, 0xD8, 0xD7, 0x2E, 0xB0};
 uint8_t bridge_mac[6];
 
 } // namespace Utils

@@ -71,6 +71,8 @@ esp_err_t BridgeCore::initialize() {
         ESP_LOGE(TAG, "ConfigManager initialization failed: %s", esp_err_to_name(ret));
         return ret;
     }
+    config_manager_->set_drone_mac(config_manager_->get_drone_mac().data()); // ConfigManager에서 드론 MAC 주소 설정
+    //config_manager_->set_bridge_mac(config_manager_->get_bridge_mac().data()); // ConfigManager에서 브리지 MAC 주소 설정
 
     ret = memory_manager_->initialize();
     if (ret != ESP_OK) {
@@ -226,25 +228,41 @@ void BridgeCore::on_wifi_disconnected() {
  * @param source 
  */
 void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSource source) {
-    ESP_LOGI(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
+    //ESP_LOGI(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
 
     // Serial JTAG 또는 UDP에서 들어온 데이터는 ESP-NOW로 전송
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {
-        esp_err_t ret = wifi_driver_->send_espnow(data, len);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to send data via ESP-NOW");
-        } else {
-            ESP_LOGD(TAG, "Forwarded %d bytes to ESP-NOW", len);
-        }
+//        if(wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW)){
+            esp_err_t ret = wifi_driver_->send_espnow(data, len);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to send data via ESP-NOW");
+            } else {
+                ESP_LOGD(TAG, "Forwarded %d bytes to ESP-NOW", len);
+            }
+//        }
     }
     // ESP-NOW에서 들어온 데이터는 Serial JTAG로 전송
     else if (source == Types::DataSource::WIFI_ESPNOW) {
-        esp_err_t ret = serial_jtag_driver_->send_data(data, len);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to send data via Serial JTAG");
-        } else {
-            ESP_LOGD(TAG, "Forwarded %d bytes to Serial JTAG", len);
+
+        esp_err_t ret;
+
+        if (serial_jtag_driver_->connected()){
+            ret = serial_jtag_driver_->send_data(data, len);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to send data via Serial JTAG");
+            } else {
+                ESP_LOGD(TAG, "Forwarded %d bytes to Serial JTAG", len);
+            }
         }
+
+//        if(wifi_driver_->is_connected(Types::DataSource::WIFI_UDP)){
+            ret = wifi_driver_->send_udp(data, len); // UDP로도 데이터 전달 (옵션)
+            if(ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to send data via UDP");
+            } else {
+                ESP_LOGD(TAG, "Forwarded %d bytes to UDP", len);
+            }
+//        }
     }
 
     // // 큐에 데이터 추가

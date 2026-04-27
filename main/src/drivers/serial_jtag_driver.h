@@ -25,6 +25,7 @@ public:
     esp_err_t send_data(const uint8_t* data, size_t len);
     esp_err_t receive_data(uint8_t* buffer, size_t max_len, size_t& actual_len, uint32_t timeout_ms = 100);
     esp_err_t start(void);
+    bool  connected();
     void stop();
     void set_buffer_size(size_t size) { buffer_size_ = size; }
 
@@ -40,9 +41,7 @@ private:
     QueueHandle_t event_queue_;
     TaskHandle_t serial_jtag_rx_task_handle_;
 
-    
     static const char* TAG;
-
     // 수신 태스크 (정적 멤버로 래핑)
     static void serial_jtag_rx_task_static(void* arg);
 };

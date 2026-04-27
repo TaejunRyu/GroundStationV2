@@ -168,6 +168,12 @@ esp_err_t SerialJtagDriver::start(void){
     return ESP_OK;        
 }
 
+bool SerialJtagDriver::connected()
+{
+    connected_ = usb_serial_jtag_is_connected();
+    return  connected_;
+}
+
 void SerialJtagDriver::stop() {
     if (running_ && serial_jtag_rx_task_handle_) {
         ESP_LOGI(TAG, "Stopping USB Serial/JTAG RX Task...");

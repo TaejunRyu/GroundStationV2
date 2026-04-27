@@ -199,25 +199,23 @@ esp_err_t WiFiDriver::init_espnow(const Types::EspNowConfig& config) {
     }
   
     
-    // 드론 MAC 주소 저장
-    memcpy(drone_mac_, config.peer_mac, sizeof(drone_mac_));
-
-    // drone_mac_[0] = 0xB0; 
-    // drone_mac_[1] = 0xCB; 
-    // drone_mac_[2] = 0xD8; 
-    // drone_mac_[3] = 0xD7; 
-    // drone_mac_[4] = 0x2E; 
-    // drone_mac_[5] = 0xB0;
+    // 드론 MAC 주소 저장 - Hardcoded 값으로 설정
+    drone_mac_[0] = 0xB0; 
+    drone_mac_[1] = 0xCB; 
+    drone_mac_[2] = 0xD8; 
+    drone_mac_[3] = 0xD7; 
+    drone_mac_[4] = 0x2E; 
+    drone_mac_[5] = 0xB0;
     
-    // Peer 등록
+    // Peer 등록 - drone_mac_을 사용하여 send_espnow와 일관성 유지
     esp_now_peer_info_t peer_info = {};
-    memcpy(peer_info.peer_addr, config.peer_mac, ESP_NOW_ETH_ALEN);
+    memcpy(peer_info.peer_addr, drone_mac_, ESP_NOW_ETH_ALEN);
     peer_info.channel = config.channel;
     peer_info.encrypt = false;
     peer_info.ifidx = WIFI_IF_STA;
 
-    if (esp_now_is_peer_exist(config.peer_mac)) {
-        esp_now_del_peer(config.peer_mac);
+    if (esp_now_is_peer_exist(drone_mac_)) {
+        esp_now_del_peer(drone_mac_);
     }
 
     ret = esp_now_add_peer(&peer_info);
@@ -235,13 +233,13 @@ esp_err_t WiFiDriver::init_espnow(const Types::EspNowConfig& config) {
     rate_config.phymode = config.phy_mode;
     rate_config.rate = config.rate;
 
-    ret = esp_now_set_peer_rate_config(config.peer_mac, &rate_config);
+    ret = esp_now_set_peer_rate_config(drone_mac_, &rate_config);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "ESP-NOW rate config failed: %s", esp_err_to_name(ret));
     }else{
         ESP_LOGI(TAG, "Drone peer 등록 성공: %02x:%02x:%02x:%02x:%02x:%02x",
-                 config.peer_mac[0], config.peer_mac[1], config.peer_mac[2],
-                 config.peer_mac[3], config.peer_mac[4], config.peer_mac[5]);    
+                 drone_mac_[0], drone_mac_[1], drone_mac_[2],
+                 drone_mac_[3], drone_mac_[4], drone_mac_[5]);    
     }
     espnow_initialized_ = true;
     ESP_LOGI(TAG, "ESP-NOW initialized successfully");
@@ -315,24 +313,31 @@ void WiFiDriver::disable_udp_recv() {
  */
 esp_err_t WiFiDriver::send_udp(const uint8_t* data, size_t len) {
     if (udp_pcb_ == nullptr || !udp_initialized_) {
+        ESP_LOGE(TAG, "UDP not initialized");
         return ESP_ERR_INVALID_STATE;
     }
 
-    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_RAM);
-    if (!p) return ESP_ERR_NO_MEM;
+    struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
+    if (!p) {
+        ESP_LOGE(TAG, "Failed to allocate pbuf");
+        return ESP_ERR_NO_MEM;
+    }
 
-    p->tot_len = len;
-    p->len = len;
     memcpy(p->payload, data, len);
 
-    err_t err = udp_send(udp_pcb_, p);
+    // Broadcast address: 192.168.4.255 (AP의 broadcast 주소)
+    ip_addr_t broadcast_addr;
+    IP_ADDR4(&broadcast_addr, 192, 168, 4, 255);
+
+    err_t err = udp_sendto(udp_pcb_, p, &broadcast_addr, Types::Config::UDP_PORT);
     pbuf_free(p);
 
     if (err != ERR_OK) {
-        ESP_LOGE(TAG, "UDP send failed: %d", err);
+        ESP_LOGE(TAG, "UDP sendto failed: %d", err);
         return ESP_FAIL;
     }
 
+    ESP_LOGD(TAG, "UDP sent %d bytes to broadcast address", len);
     return ESP_OK;
 }
 
@@ -345,6 +350,10 @@ esp_err_t WiFiDriver::send_udp(const uint8_t* data, size_t len) {
  */
 esp_err_t WiFiDriver::send_espnow(const uint8_t* data, size_t len) {
     if (!espnow_initialized_) return ESP_ERR_INVALID_STATE;
+
+    // ESP_LOGI(TAG, "Sending ESP-NOW data to %02x:%02x:%02x:%02x:%02x:%02x, len: %d",
+    //          drone_mac_[0], drone_mac_[1], drone_mac_[2],
+    //          drone_mac_[3], drone_mac_[4], drone_mac_[5], len);
 
     esp_err_t ret = esp_now_send(drone_mac_, data, len);
     if (ret != ESP_OK) {
@@ -597,20 +606,27 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
         process_buffer = (uint8_t*)p->payload;
     }
 
+    ESP_LOGI(TAG, "UDP received %d bytes from %s:%d", p->tot_len, ipaddr_ntoa(addr), port);
+
+
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+    bridge.on_data_received(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
+
+    
     // MAVLink 파싱 및 콜백 호출
-    static mavlink_message_t msg;
-    static mavlink_status_t status;
-    static uint8_t temp_buffer[1024];
+    // static mavlink_message_t msg;
+    // static mavlink_status_t status;
+    // static uint8_t temp_buffer[1024];
 
-    for (size_t ii = 0; ii < p->tot_len; ii++) {
-        if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
-            int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
+    // for (size_t ii = 0; ii < p->tot_len; ii++) {
+    //     if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
+    //         int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
 
-            if (driver->data_callback_) {
-                driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
-            }
-        }
-    }
+    //         if (driver->data_callback_) {
+    //             driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
+    //         }
+    //     }
+    // }
 
     pbuf_free(p);
 }
