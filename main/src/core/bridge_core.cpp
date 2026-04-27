@@ -181,9 +181,16 @@ esp_err_t BridgeCore::start() {
     ret = serial_jtag_driver_->start(); // Serial JTAG 드라이버는 별도의 start 함수가 없으므로 initialize에서 바로 사용 가능       
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start Serial JTAG driver");
-        return ret;
+        return ret;        
     }
- 
+    
+    // // Serial JTAG select callback 등록
+    // serial_jtag_driver_->set_select_callback([](usj_select_notif_t event, int* task_woken) {
+    //     ESP_LOGD(TAG, "Serial JTAG event: %d", event);
+    //     if (task_woken) *task_woken = 0;
+    // });
+
+
     // 타이머 시작
     ret = timer_service_->start();
     if (ret != ESP_OK) {

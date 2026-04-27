@@ -20,12 +20,16 @@
 namespace Drivers {
 
 const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
+
+// Global select callback for static callback function
+static usj_select_notif_callback_t g_select_callback = nullptr;
+
 /**
  * @brief Construct a new Serial Jtag Driver:: Serial Jtag Driver object    
  * 
  */
 SerialJtagDriver::SerialJtagDriver()
-    :buffer_size_(2048), initialized_(false), event_queue_(nullptr), serial_jtag_rx_task_handle_(nullptr) {
+    :buffer_size_(2048), initialized_(false), event_queue_(nullptr) {
     ESP_LOGI(TAG, "SerialJtagDriver created for UART Serial JTAG");
 }
 
@@ -54,6 +58,8 @@ esp_err_t SerialJtagDriver::initialize() {
         ESP_LOGE(TAG, "Failed to install Serial JTAG driver: %s", esp_err_to_name(ret));
         return ret;
     }
+
+
     
     initialized_ = true;
     ESP_LOGI(TAG, "Serial JTAG initialized successfully");
@@ -70,7 +76,6 @@ void SerialJtagDriver::deinitialize() {
     usb_serial_jtag_driver_uninstall();
     event_queue_ = nullptr;
     initialized_ = false;
-    serial_jtag_rx_task_handle_ = nullptr;
     ESP_LOGI(TAG, "Serial JTAG deinitialized");
 }
 
@@ -139,34 +144,23 @@ esp_err_t SerialJtagDriver::receive_data(uint8_t* buffer, size_t max_len, size_t
 }
 
 /**
- * @brief Serial JTAG 드라이버 시작 (수신 태스크 생성)
+ * @brief Serial JTAG 드라이버 시작 (callback模式下에서는 태스크 생성 불필요)
  */
 esp_err_t SerialJtagDriver::start(void){
     if (!initialized_ || running_) {
         ESP_LOGE(TAG, "Serial JTAG not initialized or already running");
         return ESP_OK;
     }
+    
+    // Register select notification callback
+    usb_serial_jtag_set_select_notif_callback(select_notif_callback);
 
-    ESP_LOGI(TAG, "Starting USB Serial/JTAG RX Task...");
-    // FreeRTOS 태스크 생성
-    // static으로 선언된 uart_rx_task_static을 실행합니다.
-    BaseType_t res = xTaskCreate(
-        serial_jtag_rx_task_static, // 실행할 함수
-        "serial_jtag_rx_task_static",                    // 태스크 이름
-        4096,                                  // 스택 크기 (필요에 따라 조절)
-        this,                                  // 전달 인자 (this 포인터)
-        10,                                     // 우선 순위
-        &serial_jtag_rx_task_handle_                       // 태스크 핸들 (멤버 변수로 관리 권장)
-    );
-
-    if (res != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create RX task");
-        return ESP_FAIL;
-    }
 
     running_ = true;
+    ESP_LOGI(TAG, "Serial JTAG started in callback mode");
     return ESP_OK;        
 }
+
 
 bool SerialJtagDriver::connected()
 {
@@ -175,46 +169,66 @@ bool SerialJtagDriver::connected()
 }
 
 void SerialJtagDriver::stop() {
-    if (running_ && serial_jtag_rx_task_handle_) {
-        ESP_LOGI(TAG, "Stopping USB Serial/JTAG RX Task...");
-        vTaskDelete(serial_jtag_rx_task_handle_);
-        serial_jtag_rx_task_handle_ = nullptr;
+    if (running_) {
         running_ = false;
+        ESP_LOGI(TAG, "Serial JTAG stopped");
     }
 }
 
 
 /**
- * @brief 
- *      1. Serial JTAG 드라이버 수신 태스크 (정적 멤버 함수)
- *      2. FreeRTOS 태스크로 실행되며, this 포인터를 전달받아 인스턴스 멤버에 접근
- *      3. 무한 루프에서 데이터를 수신하며, 수신된 데이터를 BridgeCore의 on_data_received() 메서드로 전달
- *      4. 수신된 데이터는 event_queue_를 통해 비동기적으로 처리할 수도 있도록 설계 (현재는 직접 on_data_received 호출)
- *      
- * @param arg this 포인터가 전달됨
+ * @brief Select notification callback (정적 멤버 함수)
+ *        USB Serial JTAG의 select() 이벤트에 대한 콜백
+ *        callback模式下에서 데이터 수신 시 직접 데이터를 읽어 BridgeCore로 전달
+ * 
+ * @param event 이벤트 타입 (USJ_SELECT_READ_NOTIF 또는 USJ_SELECT_WRITE_NOTIF)
+ * @param task_woken FreeRTOS 태스크 각石 여부
  */
-void SerialJtagDriver::serial_jtag_rx_task_static(void* arg) {
-    SerialJtagDriver* driver = static_cast<SerialJtagDriver*>(arg);
-    uint8_t* buffer = new uint8_t[driver->buffer_size_];
-
-    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-
-    while (true) {
-        size_t actual_len = 0;
-        esp_err_t ret = driver->receive_data(buffer, driver->buffer_size_, actual_len, portMAX_DELAY);
-        if (ret == ESP_OK && actual_len > 0) {
-            //ESP_LOGI(TAG, "Received %d bytes in RX task", actual_len);
-            
-            bridge.on_data_received(buffer, actual_len, Types::DataSource::UART_SERIAL);
-            
-            // 수신된 데이터를 이벤트 큐에 전달
-            //xQueueSend(driver->event_queue_, &actual_len, portMAX_DELAY);
-        } else if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Error receiving data in RX task: %s", esp_err_to_name(ret));
+void SerialJtagDriver::select_notif_callback(usj_select_notif_t event, int* task_woken) {
+    switch (event) {
+        case USJ_SELECT_READ_NOTIF: {
+            ESP_LOGD(TAG, "Select read notification - reading data...");
+            // callback에서 직접 데이터 읽기
+            uint8_t buffer[256];
+            while (true) {
+                int read_len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0);
+                if (read_len > 0) {
+                    ESP_LOGD(TAG, "Callback read %d bytes", read_len);
+                    // BridgeCore로 데이터 전달
+                    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+                    bridge.on_data_received(buffer, read_len, Types::DataSource::UART_SERIAL);
+                } else {
+                    break;
+                }
+            }
+            break;
         }
-        vTaskDelay(pdMS_TO_TICKS(10)); // 수신 루프에 약간의 딜레이 추가 (필요에 따라 조절)
+        case USJ_SELECT_WRITE_NOTIF:
+            ESP_LOGD(TAG, "Select write notification - buffer ready");
+            break;
+        case USJ_SELECT_ERROR_NOTIF:
+            ESP_LOGE(TAG, "Select error notification");
+            break;
+        default:
+            break;
     }
-    delete[] buffer;
+    
+    // 사용자 정의 콜백이 있으면 호출
+    if (g_select_callback != nullptr) {
+        g_select_callback(event, task_woken);
+    } else if (task_woken != nullptr) {
+        *task_woken = 0;
+    }
+}
+
+/**
+ * @brief Set select notification callback
+ * 
+ * @param callback 사용자 정의 콜백 함수
+ */
+void SerialJtagDriver::set_select_callback(usj_select_notif_callback_t callback) {
+    g_select_callback = callback;
+    ESP_LOGI(TAG, "Select callback registered");
 }
 
 

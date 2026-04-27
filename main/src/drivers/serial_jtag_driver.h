@@ -11,6 +11,9 @@
 #include <functional>
 #include "bridge_types.h"
 
+// USB Serial JTAG select callback types
+#include "driver/usb_serial_jtag_select.h"
+
 namespace Drivers {
 
 class SerialJtagDriver {
@@ -28,22 +31,24 @@ public:
     bool  connected();
     void stop();
     void set_buffer_size(size_t size) { buffer_size_ = size; }
-
+    
     // 이벤트 큐 접근
     QueueHandle_t get_event_queue() const { return event_queue_; }
 
+    // Select notification callback 설정
+    void set_select_callback(usj_select_notif_callback_t callback);
+
 private:
+    // Static callback wrapper for USB Serial JTAG
+    static void select_notif_callback(usj_select_notif_t event, int* task_woken);
 
     size_t buffer_size_;
     bool initialized_;
     bool running_;
     bool connected_;
     QueueHandle_t event_queue_;
-    TaskHandle_t serial_jtag_rx_task_handle_;
 
     static const char* TAG;
-    // 수신 태스크 (정적 멤버로 래핑)
-    static void serial_jtag_rx_task_static(void* arg);
 };
 
 } // namespace Drivers
