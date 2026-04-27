@@ -49,7 +49,8 @@ public:
     void on_data_received(const uint8_t* data, size_t len, Types::DataSource source);
     void on_timer_tick();
     
-    // bridge_core.h 내부
+    // 싱글톤 인스턴스 접근 메서드
+    // 🌟 get_instance() 메서드 구현
     static BridgeCore& get_instance() {
         static BridgeCore* instance = new BridgeCore(); // 힙에 할당하여 소멸 순서 꼬임 방지
         return *instance;

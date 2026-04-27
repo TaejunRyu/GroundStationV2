@@ -25,7 +25,7 @@ const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
  * 
  */
 SerialJtagDriver::SerialJtagDriver()
-    :buffer_size_(1024), initialized_(false), event_queue_(nullptr), serial_jtag_rx_task_handle_(nullptr) {
+    :buffer_size_(2048), initialized_(false), event_queue_(nullptr), serial_jtag_rx_task_handle_(nullptr) {
     ESP_LOGI(TAG, "SerialJtagDriver created for UART Serial JTAG");
 }
 
@@ -89,18 +89,23 @@ esp_err_t SerialJtagDriver::send_data(const uint8_t* data, size_t len) {
 
     if (!data || len == 0) return ESP_ERR_INVALID_ARG;
 
-    int written = usb_serial_jtag_write_bytes(data, len, pdMS_TO_TICKS(100));
-    if (written < 0) {
-        ESP_LOGE(TAG, "Serial JTAG write error: %s", esp_err_to_name(ESP_FAIL));
-        return ESP_FAIL;
-    }
+    if(usb_serial_jtag_write_ready()){
+        int written = usb_serial_jtag_write_bytes(data, len,0 /* pdMS_TO_TICKS(100)*/);
+        if (written < 0) {
+            ESP_LOGE(TAG, "Serial JTAG write error: %s", esp_err_to_name(ESP_FAIL));
+            return ESP_FAIL;
+        }
 
-    if (written < (int)len) {
-        ESP_LOGW(TAG, "Incomplete Serial JTAG transmission: %d / %u bytes", written, len);
+        if (written < (int)len) {
+            ESP_LOGW(TAG, "Incomplete Serial JTAG transmission: %d / %u bytes", written, len);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        return ESP_OK;
+    }else{
+        ESP_LOGW(TAG, "Serial JTAG not ready for writing");
         return ESP_ERR_TIMEOUT;
     }
-
-    return ESP_OK;
 }
 
 /**
@@ -121,7 +126,6 @@ esp_err_t SerialJtagDriver::receive_data(uint8_t* buffer, size_t max_len, size_t
     if (!buffer || max_len == 0) return ESP_ERR_INVALID_ARG;
 
     int read_len = usb_serial_jtag_read_bytes(buffer, max_len, pdMS_TO_TICKS(timeout_ms));
-
     if (read_len > 0) {
         actual_len = read_len;
         ESP_LOGD(TAG, "Received %d bytes from Serial JTAG", read_len);
@@ -202,6 +206,7 @@ void SerialJtagDriver::serial_jtag_rx_task_static(void* arg) {
         } else if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Error receiving data in RX task: %s", esp_err_to_name(ret));
         }
+        vTaskDelay(pdMS_TO_TICKS(10)); // 수신 루프에 약간의 딜레이 추가 (필요에 따라 조절)
     }
     delete[] buffer;
 }
