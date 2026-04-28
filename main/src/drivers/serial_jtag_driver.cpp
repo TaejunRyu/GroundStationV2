@@ -11,7 +11,7 @@
 
 #include "queue_manager.h"
 #include "bridge_core.h"
-
+#include "led_strip_driver.h"
 /**
  * @brief 
  *    1. 가상통신방식으로 통신속도에 구애를 받지 않고 안정적인 통신이 가능하도록 설계
@@ -28,14 +28,14 @@ const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
 // Global select callback for static callback function
 //static usj_select_notif_callback_t g_select_callback = nullptr;
 Core::QueueManager* SerialJtagDriver::queue_mgr_ = nullptr;
-SerialJtagDriver* SerialJtagDriver::serial_jtag_driver_ = nullptr;
+//SerialJtagDriver* SerialJtagDriver::serial_jtag_driver_ = nullptr;
 SemaphoreHandle_t SerialJtagDriver::rx_sem_ = nullptr;
 /**
  * @brief Construct a new Serial Jtag Driver:: Serial Jtag Driver object    
  * 
  */
 SerialJtagDriver::SerialJtagDriver()
-    :buffer_size_(2048), initialized_(false), running_(false),connected_(false), last_rx_timestamp_(0), event_queue_(nullptr) {
+    :buffer_size_(2048), initialized_(false), running_(false),connected_(false), last_rx_timestamp_(0) {
     ESP_LOGI(TAG, "SerialJtagDriver created for UART Serial JTAG");
 }
 
@@ -56,7 +56,7 @@ esp_err_t SerialJtagDriver::initialize() {
     if (initialized_) return ESP_OK;
 
     //callback 함수에서 자신의 멤버에 접근할 수 있도록 static 멤버에 자기 자신 포인터 저장
-    serial_jtag_driver_ = this; // static 멤버에 자기 자신 포인터 저장
+    //serial_jtag_driver_ = this; // static 멤버에 자기 자신 포인터 저장
 
     usb_serial_jtag_driver_config_t cfg = {};
     cfg.rx_buffer_size = buffer_size_;
@@ -88,7 +88,7 @@ void SerialJtagDriver::deinitialize() {
         rx_sem_ = nullptr;
     }
     usb_serial_jtag_driver_uninstall();
-    event_queue_ = nullptr;
+    //event_queue_ = nullptr;
     initialized_ = false;
     ESP_LOGI(TAG, "Serial JTAG deinitialized");
 }
@@ -210,6 +210,7 @@ void SerialJtagDriver::select_notif_callback(usj_select_notif_t event, int* task
 }
 
 void SerialJtagDriver::rx_task(void* pvParameters) {
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     SerialJtagDriver* self = static_cast<SerialJtagDriver*>(pvParameters);
     uint8_t buffer[256];
 
@@ -217,11 +218,15 @@ void SerialJtagDriver::rx_task(void* pvParameters) {
         // 콜백이 신호를 줄 때까지 무한 대기
         if (xSemaphoreTake(rx_sem_, portMAX_DELAY) == pdTRUE) {
             int len;
+            self->update_last_rx_timestamp();
+            if (!self->is_connected()) {
+                self->set_connected(true);
+                bridge.get_led_strip_driver().set_status_ok();
+                ESP_LOGI(TAG, "Serial JTAG: [CONNECTED]");
+            }
             // 읽을 데이터가 없을 때까지 계속 읽음 (버퍼 비우기)
             while ((len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0)) > 0) {
-                self->queue_mgr_->enqueue_packet(buffer, len, Types::DataSource::UART_SERIAL);
-                self->update_last_rx_timestamp();
-                self->set_connected(true);
+                self->queue_mgr_->enqueue_packet(buffer, len, Types::DataSource::UART_SERIAL);    
             }
         }
     }

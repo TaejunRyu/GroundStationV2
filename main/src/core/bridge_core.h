@@ -4,6 +4,8 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <atomic>
+
 #include "bridge_types.h"
 
 // 1. 클래스 내부가 아닌 여기서 먼저 선언하세요.
@@ -16,6 +18,7 @@ namespace Services {
 namespace Drivers {
     class WiFiDriver;
     class SerialJtagDriver;
+    class LedStripDriver;
 }
 
 namespace Core {
@@ -57,12 +60,25 @@ public:
         return *instance;
     }
 
+    // 서비스 및 드라이버 접근자
+    Drivers::WiFiDriver& get_wifi_driver() { return *wifi_driver_; }
     Drivers::SerialJtagDriver& get_serial_jtag_driver() { return *serial_jtag_driver_; }
+    Drivers::LedStripDriver& get_led_strip_driver() { return *strip_driver_; }
     Core::QueueManager& get_queue_manager() { return *queue_manager_; }
 
     static void process_task(void* pvParameters);
     void handle_incoming_data(Types::QueueMessage* msg);
     void check_connection_timeout();
+
+    int8_t  get_rssi() const;
+    void    set_rssi(int8_t rssi) { rssi_ = rssi; }
+    int8_t  get_noise_floor() const;
+    void    set_noise_floor(int8_t noise_floor) { noise_floor_ = noise_floor; }
+    int8_t  get_remote_rssi() const;
+    void    set_remote_rssi(int8_t rssi) { remote_rssi_ = rssi; }
+    int8_t  get_remote_noise_floor() const;
+    void    set_remote_noise_floor(int8_t noise_floor) { remote_noise_floor_ = noise_floor; }
+
 private: 
 
     // 서비스 객체들 (unique_ptr로 관리)
@@ -71,13 +87,23 @@ private:
 
     std::unique_ptr<Services::MavlinkService> mavlink_service_;
     std::unique_ptr<Services::TimerService> timer_service_;
+
+    std::unique_ptr<Drivers::LedStripDriver> strip_driver_;    
     std::unique_ptr<Drivers::WiFiDriver> wifi_driver_;
     std::unique_ptr<Drivers::SerialJtagDriver> serial_jtag_driver_;
+    
     std::unique_ptr<Core::QueueManager> queue_manager_;
 
     Types::SystemState system_state_;
     TaskHandle_t process_task_handle_;
     TaskHandle_t serial_jtag_rx_task_handle_;
+    
+    
+        // 드론과 브리지의 RSSI 및 노이즈 플로어 정보
+    std::atomic<int8_t>  rssi_{0}, noise_floor_{0};
+    std::atomic<int8_t>  remote_rssi_{0}, remote_noise_floor_{0};
+    
+    
     static const char* TAG;
 };
 

@@ -159,4 +159,11 @@ void QueueManager::free_message(Types::QueueMessage* message) {
     }
 }
 
+/**
+ * 사용률 반환
+ */
+uint8_t QueueManager::get_queue_usage(){
+    return (uint8_t)((uxQueueMessagesWaiting(packet_queue_) * 100) / PACKET_QUEUE_SIZE);
+}
+
 } // namespace Core

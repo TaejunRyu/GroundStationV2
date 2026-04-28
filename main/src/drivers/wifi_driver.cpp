@@ -11,7 +11,7 @@
 #include <c_library_v2/common/mavlink.h>
 #include "bridge_core.h"
 #include "queue_manager.h"
-
+#include "led_strip_driver.h"
 namespace Drivers {
 
 const char* WiFiDriver::TAG = "WIFI_DRIVER";
@@ -21,9 +21,9 @@ const char* WiFiDriver::TAG = "WIFI_DRIVER";
  */
 WiFiDriver::WiFiDriver()
     : udp_rx_buffer_(nullptr), initialized_(false), ap_started_(false),
-      espnow_initialized_(false), udp_initialized_(false),espnow_rx_timestamp_(0),udp_rx_timestamp_(0),
-      espnow_connected_(false), udp_connected_(false),rssi_(0), noise_floor_(0), remote_rssi_(0), 
-      remote_noise_floor_(0), udp_pcb_(nullptr), event_loop_(nullptr) {
+      espnow_initialized_(false),last_espnow_rx_timestamp_(0),espnow_connected_(false),
+      udp_initialized_(false),last_udp_rx_timestamp_(0),udp_connected_(false),
+      udp_pcb_(nullptr), event_loop_(nullptr) {
     memset(drone_mac_, 0, sizeof(drone_mac_));
     ESP_LOGI(TAG, "WiFiDriver created");
 }
@@ -352,17 +352,11 @@ esp_err_t WiFiDriver::send_udp(const uint8_t* data, size_t len) {
  */
 esp_err_t WiFiDriver::send_espnow(const uint8_t* data, size_t len) {
     if (!espnow_initialized_) return ESP_ERR_INVALID_STATE;
-
-    // ESP_LOGI(TAG, "Sending ESP-NOW data to %02x:%02x:%02x:%02x:%02x:%02x, len: %d",
-    //          drone_mac_[0], drone_mac_[1], drone_mac_[2],
-    //          drone_mac_[3], drone_mac_[4], drone_mac_[5], len);
-
     esp_err_t ret = esp_now_send(drone_mac_, data, len);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ESP-NOW send failed: %s", esp_err_to_name(ret));
         return ret;
     }
-
     return ESP_OK;
 }
 
@@ -471,41 +465,6 @@ bool WiFiDriver::is_connected(Types::DataSource source) const {
 
 /**
  * @brief 
- * RSSI 값 조회 함수
- * @return int8_t 
- */
-int8_t WiFiDriver::get_rssi() const {
-    return rssi_;
-}
-
-/**
- * @brief 
- * 노이즈 플로어 값 조회 함수
- * @return int8_t 
- */
-int8_t WiFiDriver::get_noise_floor() const {
-    return noise_floor_;
-}
-
-/**
- * @brief 
- * 원격 RSSI 값 조회 함수
- * @return int8_t 
- */
-int8_t WiFiDriver::get_remote_rssi() const {
-    return remote_rssi_;
-}
-/**
- * @brief 
- * 원격 노이즈 플로어 값 조회 함수
- * @return int8_t 
- */
-int8_t WiFiDriver::get_remote_noise_floor() const {
-    return remote_noise_floor_;
-}
-
-/**
- * @brief 
  * 내 MAC 주소 조회 함수
  * @return std::array<uint8_t, 6> 
  */
@@ -589,9 +548,26 @@ void WiFiDriver::wifi_event_handler(void* arg, esp_event_base_t event_base,
  * @param len 
  */
 void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
-    // BridgeCore 인스턴스를 통해 콜백 호출
-    //ESP_LOGI(TAG, "ESP-NOW received %d bytes", len);
+
+    if(recv_info == nullptr || data == nullptr || len <= 0) return;
+    if (len > Types::Config::UDP_RX_BUFFER_SIZE) {
+        ESP_LOGW(TAG, "Received ESP-NOW packet too large: %d bytes", len);
+        return;
+    }
+    if (recv_info->src_addr == nullptr) {
+        ESP_LOGW(TAG, "Received ESP-NOW packet with null source address");
+        return;
+    }
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+    bridge.get_wifi_driver().update_last_espnow_rx_timestamp();
+    if (!bridge.get_wifi_driver().is_espnow_connected()) {
+        bridge.get_wifi_driver().set_espnow_connected(true);
+        bridge.get_led_strip_driver().set_status_ok();
+        ESP_LOGI(TAG, "Wi-Fi ESPNOW: [CONNECTED]");
+    }
+    bridge.set_remote_rssi(recv_info->rx_ctrl->rssi);
+    bridge.set_remote_noise_floor(recv_info->rx_ctrl->noise_floor);
+
     bridge.get_queue_manager().enqueue_packet(data, len, Types::DataSource::WIFI_ESPNOW);
  
     //bridge.on_data_received(data, len, Types::DataSource::WIFI_ESPNOW);
@@ -605,8 +581,21 @@ void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint
  * @param status 
  */
 void WiFiDriver::espnow_send_cb(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
-    // TODO: WiFiDriver 인스턴스에 접근해서 콜백 호출
-    ESP_LOGD(TAG, "ESP-NOW send status: %d", status);
+    if (tx_info == nullptr) return;
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+    if (status == ESP_NOW_SEND_SUCCESS) {
+        // 성공 로그는 DEBUG 레벨로 충분합니다.
+        ESP_LOGD(TAG, "ESP-NOW packet sent successfully");
+    } else {
+        // 현재 연결된 상태라고 판단될 때만 경고(WARN) 수준으로 출력하고,
+        // 이미 끊긴 상태라면 로그를 찍지 않거나 VERBOSE로 낮춥니다.
+        if (bridge.get_wifi_driver().is_connected(Types::DataSource::WIFI_ESPNOW)) {
+            ESP_LOGW(TAG, "ESP-NOW send failed (No ACK from drone)");
+        } else {
+            // 연결 끊김이 이미 감지된 상태라면 로그 생략
+            ESP_LOGV(TAG, "ESP-NOW send failed during disconnected state");
+        }
+    }
 }
 
 /**
@@ -635,33 +624,17 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
     } else {
         process_buffer = (uint8_t*)p->payload;
     }
-
-    //ESP_LOGI(TAG, "UDP received %d bytes from %s:%d", p->tot_len, ipaddr_ntoa(addr), port);
-
+    
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-    //bridge.on_data_received(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
+    bridge.get_wifi_driver().update_last_udp_rx_timestamp();
+    if (!bridge.get_wifi_driver().is_udp_connected()) {
+        bridge.get_wifi_driver().set_udp_connected(true);
+        bridge.get_led_strip_driver().set_status_ok();
+        ESP_LOGI(TAG, "Wi-Fi UDP: [CONNECTED]");
+    }
     bridge.get_queue_manager().enqueue_packet(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
     
-    // // MAVLink 파싱 및 콜백 호출
-    // static mavlink_message_t msg;
-    // static mavlink_status_t status;
-    // static uint8_t temp_buffer[1024];
-
-    // for (size_t ii = 0; ii < p->tot_len; ii++) {
-    //     if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
-    //         int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
-
-    //         if (driver->data_callback_) {
-    //             driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
-    //         }
-    //     }
-    // }
-
     pbuf_free(p);
 }
-
-
-
-
 
 } // namespace Drivers

@@ -12,6 +12,8 @@
 #include "queue_manager.h"
 #include "config_manager.h"
 #include "memory_manager.h"
+#include "led_strip_driver.h"
+#include "bridge_types.h"
 
 namespace Core {
 
@@ -63,6 +65,7 @@ esp_err_t BridgeCore::initialize() {
     timer_service_ = std::make_unique<Services::TimerService>();
     wifi_driver_ = std::make_unique<Drivers::WiFiDriver>();
     serial_jtag_driver_ = std::make_unique<Drivers::SerialJtagDriver>();
+    strip_driver_ = std::make_unique<Drivers::LedStripDriver>();
     queue_manager_ = std::make_unique<Core::QueueManager>();
 
 
@@ -73,6 +76,12 @@ esp_err_t BridgeCore::initialize() {
     }
     config_manager_->set_drone_mac(config_manager_->get_drone_mac().data()); // ConfigManager에서 드론 MAC 주소 설정
     //config_manager_->set_bridge_mac(config_manager_->get_bridge_mac().data()); // ConfigManager에서 브리지 MAC 주소 설정
+
+    ret = strip_driver_->initialize();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "LedStripDriver initialization failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     ret = memory_manager_->initialize();
     if (ret != ESP_OK) {
@@ -136,7 +145,6 @@ esp_err_t BridgeCore::start() {
 
     // 타이머 콜백 설정 (Serial JTAG 폴링)  타이머는 100ms마다 on_timer_tick을 호출하도록 설정
     // 타이머는 단순히 callback함수를 실행시키는 서비스를 제공하므로, 타이머 서비스에서 on_timer_tick을 호출하도록 설정
-    timer_service_->set_timer_callback([this]() { on_timer_tick(); });
    
     // Wi-Fi 설정 및 시작
     Types::WiFiConfig wifi_config = {
@@ -174,8 +182,6 @@ esp_err_t BridgeCore::start() {
         return ret;
     }
     
-    
-
     ret = serial_jtag_driver_->start(); // Serial JTAG 드라이버는 별도의 start 함수가 없으므로 initialize에서 바로 사용 가능       
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start Serial JTAG driver");
@@ -183,41 +189,23 @@ esp_err_t BridgeCore::start() {
     }  
     serial_jtag_driver_->set_queue_manager(queue_manager_.get()); // Serial JTAG 드라이버에 QueueManager 포인터 전달
   
-
     // 타이머 시작
     ret = timer_service_->start();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start timer");
         return ret;
     }
- 
-    // 3. 소비자(Core Task) 실행
-    // 데이터가 들어오기 전에 미리 기다리고 있게 합니다.
-    xTaskCreatePinnedToCore(
-        BridgeCore::process_task,    // 실행할 함수 (static)
-        "process_task",     // 이름
-        4096,            // 스택 크기
-        this,            // 인자로 this 전달
-        5,               // 우선순위
-        &process_task_handle_,   // 태스크 핸들
-        1                // 실행할 코어 번호
-    );
-
-    // 데이터가 들어오기 전에 미리 기다리고 있게 합니다.
-    xTaskCreatePinnedToCore(
-        Drivers::SerialJtagDriver::rx_task,    // 실행할 함수 (static)
-        "rx_task",     // 이름
-        4096,            // 스택 크기
-        serial_jtag_driver_.get(),            // 인자로 serial_jtag_driver_ 전달
-        5,               // 우선순위
-        &serial_jtag_rx_task_handle_,   // 태스크 핸들
-        1                // 실행할 코어 번호
-    );
+   
+    // 데이터 처리 태스크 생성 (우선순위 5, 코어 1 고정)
+    xTaskCreatePinnedToCore(BridgeCore::process_task,           "process_task", 4096,this,                      5,&process_task_handle_,1);
+    // Serial JTAG 수신 처리 태스크 생성 (우선순위 6, 코어 0 고정)
+    xTaskCreatePinnedToCore(Drivers::SerialJtagDriver::rx_task, "rx_task",      4096,serial_jtag_driver_.get(), 6,&serial_jtag_rx_task_handle_,0);
 
     wifi_driver_->register_espnow_callbacks(); // ESP-NOW 콜백 등록
     wifi_driver_->enable_udp_recv();
     serial_jtag_driver_->register_select_callback(); // Serial JTAG select 콜백 등록
- 
+    timer_service_->set_timer_callback([this]() { on_timer_tick(); });
+   
     system_state_ = Types::SystemState::RUNNING;
     ESP_LOGI(TAG, "BridgeCore started successfully");
     return ESP_OK;
@@ -245,6 +233,44 @@ void BridgeCore::on_wifi_disconnected() {
     ESP_LOGI(TAG, "Wi-Fi disconnected event received");
     // 연결 해제 처리
 }
+
+
+
+/**
+ * @brief 
+ * RSSI 값 조회 함수
+ * @return int8_t 
+ */
+int8_t BridgeCore::get_rssi() const {
+    return rssi_;
+}
+
+/**
+ * @brief 
+ * 노이즈 플로어 값 조회 함수
+ * @return int8_t 
+ */
+int8_t BridgeCore::get_noise_floor() const {
+    return noise_floor_;
+}
+
+/**
+ * @brief 
+ * 원격 RSSI 값 조회 함수
+ * @return int8_t 
+ */
+int8_t BridgeCore::get_remote_rssi() const {
+    return remote_rssi_;
+}
+/**
+ * @brief 
+ * 원격 노이즈 플로어 값 조회 함수
+ * @return int8_t 
+ */
+int8_t BridgeCore::get_remote_noise_floor() const {
+    return remote_noise_floor_;
+}
+
 
 /**
  * @brief 
@@ -300,18 +326,39 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
     size_t len = msg->length;
     Types::DataSource source = msg->source;
 
+    // MAVLink 파싱 및 콜백 호출
+    static mavlink_message_t mav_msg;
+    static mavlink_status_t status;
+    bool should_forward = true; // 중계 여부 결정 플래그
+
+
+    for (size_t ii = 0; ii < len; ii++) {
+        if (mavlink_parse_char(MAVLINK_COMM_2, data[ii], &mav_msg, &status)) {
+            if(source == Types::DataSource::WIFI_ESPNOW){
+                if(mav_msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS){
+                    rssi_ = mavlink_msg_radio_status_get_rssi(&mav_msg);
+                    noise_floor_ = mavlink_msg_radio_status_get_noise(&mav_msg);      
+                    // 가로챈 메시지는 원본을 중계하지 않음
+                    should_forward = false;           
+                }
+            }            
+        }
+    }
+    // 2. 중계 로직 (분석 결과 중계가 필요할 때만 실행)
+    if (!should_forward) return; // 가로챈 메시지라면 여기서 끝냄
+
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {
-//        if(wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW)){
+        if(wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW)){
             esp_err_t ret = wifi_driver_->send_espnow(data, len);
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "Failed to send data via ESP-NOW");
             } else {
                 ESP_LOGD(TAG, "Forwarded %d bytes to ESP-NOW", len);
             }
-//        }
+        }
     }
     // ESP-NOW에서 들어온 데이터는 Serial JTAG로 전송
-    else if (source == Types::DataSource::WIFI_ESPNOW) {
+    else if (source == Types::DataSource::WIFI_ESPNOW || source == Types::DataSource::INTERNAL ) {
 
         esp_err_t ret;
 
@@ -324,14 +371,14 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
             }
         }
 
-//        if(wifi_driver_->is_connected(Types::DataSource::WIFI_UDP)){
+        if(wifi_driver_->is_connected(Types::DataSource::WIFI_UDP)){
             ret = wifi_driver_->send_udp(data, len); // UDP로도 데이터 전달 (옵션)
             if(ret != ESP_OK) {
                 ESP_LOGW(TAG, "Failed to send data via UDP");
             } else {
                 ESP_LOGD(TAG, "Forwarded %d bytes to UDP", len);
             }
-//        }
+        }
     }
 }
 
@@ -345,44 +392,41 @@ void BridgeCore::check_connection_timeout() {
         if (is_now_connected != last_state) {
             serial_jtag_driver_->set_connected(is_now_connected);
 
-            if (is_now_connected) {
-                ESP_LOGI(TAG, "Serial JTAG: [CONNECTED]");
-                // TODO: 나중에 여기에 '연결됨' 이벤트 발생 코드 삽입
-            } else {
+            if (!is_now_connected) {
+                strip_driver_->set_status_warning();
                 ESP_LOGW(TAG, "Serial JTAG: [DISCONNECTED]");
-                // TODO: 나중에 여기에 '연결 끊김' 이벤트 발생 코드 삽입
-            }
+                // TODO: 나중에 여기에 '연결됨' 이벤트 발생 코드 삽입
+            } 
         }
     }
 
-    // {// WIFI UDP 연결 상태 체크
-    //     bool is_now_connected = wifi_driver_->is_connected(Types::DataSource::WIFI_UDP);
-    //     bool last_state = wifi_driver_->is_connected(Types::DataSource::WIFI_UDP);
+    {// WIFI UDP 연결 상태 체크
+        bool is_now_connected = wifi_driver_->get_time_since_last_udp_rx() < 2'000'000; // 2초 이상 데이터 수신 없으면 연결 끊김으로 간주
+        bool last_state = wifi_driver_->is_connected(Types::DataSource::WIFI_UDP);
 
-    //     // 상태가 변했을 때만 처리 (Edge Detection)
-    //     if (is_now_connected != last_state) {
-    //         if (is_now_connected) {
-    //             ESP_LOGI(TAG, "Wi-Fi UDP: [CONNECTED]");
-    //         } else {
-    //             ESP_LOGW(TAG, "Wi-Fi UDP: [DISCONNECTED]");
-    //         }
-    //     }
-    // }
+        // 상태가 변했을 때만 처리 (Edge Detection)
+        if (is_now_connected != last_state) {
+            wifi_driver_->set_udp_connected(is_now_connected);
+            if (!is_now_connected) {
+                strip_driver_->set_status_warning();
+                ESP_LOGW(TAG, "Wi-Fi UDP: [DISCONNECTED]");
+            } 
+        }
+    }
 
-    // {// WIFI ESPNOW 연결 상태 체크
-    //     bool is_now_connected = wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW);
-    //     bool last_state = wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW);
+    {// WIFI ESPNOW 연결 상태 체크
+        bool is_now_connected = wifi_driver_->get_time_since_last_espnow_rx() < 2'000'000; // 2초 이상 데이터 수신 없으면 연결 끊김으로 간주
+        bool last_state = wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW);
 
-    //     // 상태가 변했을 때만 처리 (Edge Detection)
-    //     if (is_now_connected != last_state) {
-    //         if (is_now_connected) {
-    //             ESP_LOGI(TAG, "Wi-Fi ESPNOW: [CONNECTED]");
-    //         } else {
-    //             ESP_LOGW(TAG, "Wi-Fi ESPNOW: [DISCONNECTED]");
-    //         }
-    //     }
-    // }
-
+        // 상태가 변했을 때만 처리 (Edge Detection)
+        if (is_now_connected != last_state) {
+            wifi_driver_->set_espnow_connected(is_now_connected);
+            if (!is_now_connected) {
+                strip_driver_->set_status_warning();
+                ESP_LOGW(TAG, "Wi-Fi ESPNOW: [DISCONNECTED]");
+            }
+        }        
+    }
 }
 
 /**
@@ -392,27 +436,83 @@ void BridgeCore::check_connection_timeout() {
  *     3. 현재는 타이머 이벤트가 발생할 때마다 tick_count를 증가시키고, tick_count에 따라 분기 처리를 하는 형태로 되어 있습니다.  
  */
 void BridgeCore::on_timer_tick() {
+
+    static uint8_t buf[1024]={};
+    static uint8_t len = 0;  
+    static mavlink_message_t msg;
     static uint32_t tick_count = 0;
+
+    static Drivers::WiFiDriver& wifi_driver = get_wifi_driver(); 
+    static Core::QueueManager& queue_manager = get_queue_manager();
     
     switch (tick_count) { 
-        case 0:
-            // radio_status 처리
+        case 0:            
             break;
         case 1:
             break;
-        case 2:
-            break;
+        case 2:{
+                uint8_t rssi = get_rssi();
+                uint8_t remote_rssi = get_remote_rssi();
+                uint8_t noise_floor = get_noise_floor();
+                uint8_t remote_noise_floor = get_remote_noise_floor();
+
+                rssi = (uint8_t)((rssi + 121) * 2);
+                remote_rssi = (uint8_t)((remote_rssi + 121) * 2);
+                remote_rssi = wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? remote_rssi : -100;
+
+                noise_floor = (uint8_t)((noise_floor + 121) * 2);
+                remote_noise_floor = (uint8_t)((remote_noise_floor + 121) * 2);
+                remote_noise_floor = wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? remote_noise_floor : -105;
+
+                mavlink_msg_radio_status_pack_chan(
+                                        Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1, &msg,                                    
+                                        rssi,  
+                                        remote_rssi,
+                                        queue_manager.get_queue_usage(),
+                                        noise_floor, 
+                                        remote_noise_floor,
+                                        0, 
+                                        0  //STATS::bridge_status.bridge.stats.fixed_errors
+                                    );
+                len = mavlink_msg_to_send_buffer(buf, &msg);
+                queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
+                break;
+            }
         case 3:
             break;
         case 4:
             // HEARTBEAT 메시지 처리
             break;
-        case 5:
+        case 5:{ // 100ms * 10 중 5번째 슬롯 (1Hz 전송)
+                // 1. 배터리 전압 읽기 (예: ADC를 통해 읽은 값, 없으면 고정값으로 테스트)
+                // 2. 3.7V 배터리라면 실제 측정값(mV 단위)을 넣으세요.
+                uint16_t battery_voltage_mv = 3700; 
+                // uint16_t battery_mv = get_battery_voltage_mv();  --> ryu_adc.cpp     
+                mavlink_msg_power_status_pack( Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, &msg, 
+                    battery_voltage_mv, 
+                    0,          // Vservo
+                    0           // flags
+                    );
+                len = mavlink_msg_to_send_buffer(buf, &msg);
+                queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
+            }
+        break;
             break;
         case 6:
             break;
-        case 7:
-            break;
+        case 7:{
+                mavlink_msg_heartbeat_pack_chan(
+                                        Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1, &msg, 
+                                        MAV_TYPE_ONBOARD_CONTROLLER,
+                                        MAV_AUTOPILOT_INVALID,  // 실질적인 배행체는 아니다.MAV_STATE_CRITICAL
+                                        0, 
+                                        0, 
+                                        wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? MAV_STATE_ACTIVE:MAV_STATE_CRITICAL); 
+                len = mavlink_msg_to_send_buffer(buf, &msg);
+                queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
+                break;
+            }
+            
         case 8:
             // BATTERY_STATUS 메시지 처리
             break;
@@ -421,8 +521,15 @@ void BridgeCore::on_timer_tick() {
         default:
             break;
     }
-    tick_count++;
-    if (tick_count >= 10) tick_count = 0; // 오버플로 방지
+
+    //if (get_wifi_driver().is_connected(Types::DataSource::WIFI_UDP) || get_wifi_driver().is_connected(Types::DataSource::UART_SERIAL)){
+        
+    //}
+
+    if (tick_count >= 9) 
+        tick_count = 0;
+    else 
+        tick_count++; 
 }
 
 

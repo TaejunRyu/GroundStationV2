@@ -8,7 +8,7 @@ namespace Drivers {
 
 class LedStripDriver {
 public:
-    LedStripDriver(uint8_t gpio_num = 8, uint8_t max_leds = 1);
+    LedStripDriver(uint8_t gpio_num = 48, uint8_t max_leds = 1);
     ~LedStripDriver();
 
     esp_err_t initialize();

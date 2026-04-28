@@ -3,8 +3,11 @@
 #include <functional>
 #include <esp_wifi.h>
 #include <esp_now.h>
+#include <esp_timer.h>
 #include <lwip/udp.h>
 #include <array>
+#include <atomic>
+
 #include "bridge_types.h"
 
 namespace Drivers {
@@ -39,18 +42,30 @@ public:
 
     // 상태 조회 및 정보 제공
     bool is_connected(Types::DataSource source) const;
-    int8_t get_rssi() const;
-    void set_rssi(int8_t rssi) { rssi_ = rssi; }
-    int8_t get_noise_floor() const;
-    void set_noise_floor(int8_t noise_floor) { noise_floor_ = noise_floor; }
-    int8_t get_remote_rssi() const;
-    void set_remote_rssi(int8_t rssi) { remote_rssi_ = rssi; }
-    int8_t get_remote_noise_floor() const;
-    void set_remote_noise_floor(int8_t noise_floor) { remote_noise_floor_ = noise_floor; }
-
+ 
     std::array<uint8_t, 6> get_my_mac_address() const;
     // 이벤트
     esp_event_loop_handle_t get_event_loop() const { return event_loop_; }
+
+    // ESP-NOW 수신 타임스탬프 및 연결 상태 관리
+    uint64_t get_last_espnow_rx_timestamp() const { return last_espnow_rx_timestamp_; }
+    uint64_t get_time_since_last_espnow_rx() const {
+        uint64_t now = esp_timer_get_time();
+        return (last_espnow_rx_timestamp_ > 0) ? (now - last_espnow_rx_timestamp_) : -1;}
+    void reset_last_espnow_rx_timestamp() { last_espnow_rx_timestamp_ = 0; }
+    void update_last_espnow_rx_timestamp() { last_espnow_rx_timestamp_ = esp_timer_get_time(); }
+    bool is_espnow_connected() const { return espnow_connected_ && initialized_; }
+    void set_espnow_connected(bool status) { if(status != espnow_connected_) espnow_connected_ = status; }
+
+    // UDP 수신 타임스탬프 및 연결 상태 관리
+    uint64_t get_last_udp_rx_timestamp() const { return last_udp_rx_timestamp_; }
+    uint64_t get_time_since_last_udp_rx() const {
+        uint64_t now = esp_timer_get_time();
+        return (last_udp_rx_timestamp_ > 0) ? (now - last_udp_rx_timestamp_) : -1;}
+    void reset_last_udp_rx_timestamp() { last_udp_rx_timestamp_ = 0; }
+    void update_last_udp_rx_timestamp() { last_udp_rx_timestamp_ = esp_timer_get_time(); }
+    bool is_udp_connected() const { return udp_connected_ && initialized_; }
+    void set_udp_connected(bool status) { if(status != udp_connected_) udp_connected_ = status; }
 
 private:
     static void wifi_event_handler(void* arg, esp_event_base_t event_base,
@@ -69,24 +84,21 @@ private:
     std::function<void()> disconnect_callback_;
     std::function<void(const uint8_t*, size_t, Types::DataSource)> data_callback_;
 
+    // WIFI 및 통신 상태 관리
     bool initialized_;
     bool ap_started_;
     
-    // 초기화 상태 플래그
+    // ESP-NOW 관련 상태 플래그
     bool espnow_initialized_;
-    bool udp_initialized_;
-
-    // 데이터 수신 타임스탬프
-    uint64_t espnow_rx_timestamp_;
-    uint64_t udp_rx_timestamp_;
-
-    //연결 상태 플래그
+    uint64_t last_espnow_rx_timestamp_;
     bool espnow_connected_;
+    
+    // UDP 관련 상태 플래그
+    bool udp_initialized_;
+    uint64_t last_udp_rx_timestamp_;
     bool udp_connected_;
     
-    // 드론과 브리지의 RSSI 및 노이즈 플로어 정보
-    int8_t rssi_, noise_floor_;
-    int8_t remote_rssi_, remote_noise_floor_;
+
 
     // UDP 관련
     struct udp_pcb* udp_pcb_;
