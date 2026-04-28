@@ -216,22 +216,16 @@ void SerialJtagDriver::rx_task(void* pvParameters) {
     while (true) {
         // 콜백이 신호를 줄 때까지 무한 대기
         if (xSemaphoreTake(rx_sem_, portMAX_DELAY) == pdTRUE) {
-            // 이제 '태스크' 환경이므로 마음껏 읽고 큐에 넣음
-            int len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0);
-            if (len > 0) {
-                queue_mgr_->enqueue_packet(buffer, len, Types::DataSource::UART_SERIAL);
+            int len;
+            // 읽을 데이터가 없을 때까지 계속 읽음 (버퍼 비우기)
+            while ((len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0)) > 0) {
+                self->queue_mgr_->enqueue_packet(buffer, len, Types::DataSource::UART_SERIAL);
                 self->update_last_rx_timestamp();
                 self->set_connected(true);
             }
         }
     }
 }
-
-
-
-
-
-
 
 
 } // namespace Drivers

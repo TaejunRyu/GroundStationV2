@@ -337,30 +337,92 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
 
 void BridgeCore::check_connection_timeout() {
     
-    //ESP_LOGI(TAG, "check_connection_timeout called");
+    { // Serial JTAG 연결 상태 체크
+        bool is_now_connected = (serial_jtag_driver_->get_time_since_last_rx() < 2'000'000); // 2초 이상 데이터 수신 없으면 연결 끊김으로 간주
+        bool last_state = serial_jtag_driver_->is_connected();
 
-    bool is_now_connected = (serial_jtag_driver_->get_time_since_last_rx() < 2'000'000); // 2초 이상 데이터 수신 없으면 연결 끊김으로 간주
-    bool last_state = serial_jtag_driver_->is_connected();
+        // 상태가 변했을 때만 처리 (Edge Detection)
+        if (is_now_connected != last_state) {
+            serial_jtag_driver_->set_connected(is_now_connected);
 
-    // 상태가 변했을 때만 처리 (Edge Detection)
-    if (is_now_connected != last_state) {
-        serial_jtag_driver_->set_connected(is_now_connected);
-
-        if (is_now_connected) {
-            ESP_LOGI(TAG, "Serial JTAG: [CONNECTED]");
-            // TODO: 나중에 여기에 '연결됨' 이벤트 발생 코드 삽입
-        } else {
-            ESP_LOGW(TAG, "Serial JTAG: [DISCONNECTED]");
-            // TODO: 나중에 여기에 '연결 끊김' 이벤트 발생 코드 삽입
+            if (is_now_connected) {
+                ESP_LOGI(TAG, "Serial JTAG: [CONNECTED]");
+                // TODO: 나중에 여기에 '연결됨' 이벤트 발생 코드 삽입
+            } else {
+                ESP_LOGW(TAG, "Serial JTAG: [DISCONNECTED]");
+                // TODO: 나중에 여기에 '연결 끊김' 이벤트 발생 코드 삽입
+            }
         }
     }
+
+    // {// WIFI UDP 연결 상태 체크
+    //     bool is_now_connected = wifi_driver_->is_connected(Types::DataSource::WIFI_UDP);
+    //     bool last_state = wifi_driver_->is_connected(Types::DataSource::WIFI_UDP);
+
+    //     // 상태가 변했을 때만 처리 (Edge Detection)
+    //     if (is_now_connected != last_state) {
+    //         if (is_now_connected) {
+    //             ESP_LOGI(TAG, "Wi-Fi UDP: [CONNECTED]");
+    //         } else {
+    //             ESP_LOGW(TAG, "Wi-Fi UDP: [DISCONNECTED]");
+    //         }
+    //     }
+    // }
+
+    // {// WIFI ESPNOW 연결 상태 체크
+    //     bool is_now_connected = wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW);
+    //     bool last_state = wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW);
+
+    //     // 상태가 변했을 때만 처리 (Edge Detection)
+    //     if (is_now_connected != last_state) {
+    //         if (is_now_connected) {
+    //             ESP_LOGI(TAG, "Wi-Fi ESPNOW: [CONNECTED]");
+    //         } else {
+    //             ESP_LOGW(TAG, "Wi-Fi ESPNOW: [DISCONNECTED]");
+    //         }
+    //     }
+    // }
+
 }
 
 /**
- * @brief 타이머 틱 이벤트 처리 함수
+ * @brief 
+ *      1. 여기는 MAVLINK 메시지 처리, 타이머 이벤트 처리 등 주기적으로 해야 하는 작업들을 수행하는 곳입니다.
+ *     2. 타이머 이벤트는 100ms마다 발생하도록 설정되어 있습니다. 따라서 타이머 이벤트가 발생할 때마다 on_timer_tick()이 호출됩니다.
+ *     3. 현재는 타이머 이벤트가 발생할 때마다 tick_count를 증가시키고, tick_count에 따라 분기 처리를 하는 형태로 되어 있습니다.  
  */
 void BridgeCore::on_timer_tick() {
-    //ESP_LOGI(TAG, "Timer tick event received");    
+    static uint32_t tick_count = 0;
+    
+    switch (tick_count) { 
+        case 0:
+            // radio_status 처리
+            break;
+        case 1:
+            break;
+        case 2:
+            break;
+        case 3:
+            break;
+        case 4:
+            // HEARTBEAT 메시지 처리
+            break;
+        case 5:
+            break;
+        case 6:
+            break;
+        case 7:
+            break;
+        case 8:
+            // BATTERY_STATUS 메시지 처리
+            break;
+        case 9:
+            break;
+        default:
+            break;
+    }
+    tick_count++;
+    if (tick_count >= 10) tick_count = 0; // 오버플로 방지
 }
 
 
