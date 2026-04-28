@@ -13,7 +13,7 @@ public:
     ~QueueManager();
 
     esp_err_t initialize();
-    void deinitialize();
+    void deinitialize(); 
 
     // 패킷 큐잉
     esp_err_t enqueue_packet(const uint8_t* data, size_t len, Types::DataSource source);
@@ -23,6 +23,8 @@ public:
     esp_err_t enqueue_event(const Types::EventData& event);
     esp_err_t dequeue_event(Types::EventData* event, TickType_t timeout = portMAX_DELAY);
 
+    void free_message(Types::QueueMessage* message);
+ 
     // 큐 상태
     size_t get_packet_queue_size() const;
     size_t get_event_queue_size() const;
@@ -30,7 +32,6 @@ public:
 private:
     // PSRAM을 활용한 큐 메시지 할당/해제
     Types::QueueMessage* allocate_message(size_t data_len);
-    void free_message(Types::QueueMessage* message);
 
     QueueHandle_t packet_queue_;
     QueueHandle_t event_queue_;

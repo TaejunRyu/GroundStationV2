@@ -132,7 +132,7 @@ esp_err_t BridgeCore::start() {
 
     // 데이터 수신 콜백 설정 (Wi-Fi와 Serial JTAG 모두)
     // Wi-Fi와 Serial JTAG에서 데이터가 들어왔을 때 on_data_received를 호출하도록 설정
-    wifi_driver_->set_data_callback([this](const uint8_t* data, size_t len, Types::DataSource source) {on_data_received(data, len, source);});
+    //wifi_driver_->set_data_callback([this](const uint8_t* data, size_t len, Types::DataSource source) {on_data_received(data, len, source);});
 
     // 타이머 콜백 설정 (Serial JTAG 폴링)  타이머는 100ms마다 on_timer_tick을 호출하도록 설정
     // 타이머는 단순히 callback함수를 실행시키는 서비스를 제공하므로, 타이머 서비스에서 on_timer_tick을 호출하도록 설정
@@ -167,29 +167,22 @@ esp_err_t BridgeCore::start() {
         return ret;
     }
 
-    wifi_driver_->register_espnow_callbacks(); // ESP-NOW 콜백 등록
-
-
     // UDP 초기화 및 수신 활성화
     ret = wifi_driver_->init_udp();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize UDP");
         return ret;
     }
-    wifi_driver_->enable_udp_recv();
+    
+    
 
     ret = serial_jtag_driver_->start(); // Serial JTAG 드라이버는 별도의 start 함수가 없으므로 initialize에서 바로 사용 가능       
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start Serial JTAG driver");
         return ret;        
-    }
-    
-    // // Serial JTAG select callback 등록
-    // serial_jtag_driver_->set_select_callback([](usj_select_notif_t event, int* task_woken) {
-    //     ESP_LOGD(TAG, "Serial JTAG event: %d", event);
-    //     if (task_woken) *task_woken = 0;
-    // });
-
+    }  
+    serial_jtag_driver_->set_queue_manager(queue_manager_.get()); // Serial JTAG 드라이버에 QueueManager 포인터 전달
+  
 
     // 타이머 시작
     ret = timer_service_->start();
@@ -197,7 +190,34 @@ esp_err_t BridgeCore::start() {
         ESP_LOGE(TAG, "Failed to start timer");
         return ret;
     }
-    
+ 
+    // 3. 소비자(Core Task) 실행
+    // 데이터가 들어오기 전에 미리 기다리고 있게 합니다.
+    xTaskCreatePinnedToCore(
+        BridgeCore::process_task,    // 실행할 함수 (static)
+        "process_task",     // 이름
+        4096,            // 스택 크기
+        this,            // 인자로 this 전달
+        5,               // 우선순위
+        &process_task_handle_,   // 태스크 핸들
+        1                // 실행할 코어 번호
+    );
+
+    // 데이터가 들어오기 전에 미리 기다리고 있게 합니다.
+    xTaskCreatePinnedToCore(
+        Drivers::SerialJtagDriver::rx_task,    // 실행할 함수 (static)
+        "rx_task",     // 이름
+        4096,            // 스택 크기
+        serial_jtag_driver_.get(),            // 인자로 serial_jtag_driver_ 전달
+        5,               // 우선순위
+        &serial_jtag_rx_task_handle_,   // 태스크 핸들
+        1                // 실행할 코어 번호
+    );
+
+    wifi_driver_->register_espnow_callbacks(); // ESP-NOW 콜백 등록
+    wifi_driver_->enable_udp_recv();
+    serial_jtag_driver_->register_select_callback(); // Serial JTAG select 콜백 등록
+ 
     system_state_ = Types::SystemState::RUNNING;
     ESP_LOGI(TAG, "BridgeCore started successfully");
     return ESP_OK;
@@ -229,15 +249,57 @@ void BridgeCore::on_wifi_disconnected() {
 /**
  * @brief 
  *  1. serial jtag 또는 wifi udp에서 데이터가 들어왔을 때 esp-now로 전달
- *  2. esp-now에서 데이터가 들어왔을 때 serial jtag 또는 wifi udp로 전달    
+ *  2. esp-now에서 데이터가 들어왔을 때 serial jtag 또는 wifi udp로 전달 
+ *  3. 큐를 이용한 데이터 전달이므로, 데이터가 들어올 때마다 바로 처리하는 것이 아니라, 큐에 넣고 process_task에서 꺼내서 처리하도록 설계
+ *  4. 이 함수는 사용하지 않음.   
  * @param data 
- * @param len 
+ * @param len  
  * @param source 
  */
 void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSource source) {
-    //ESP_LOGI(TAG, "Data received: %d bytes from source %d", len, static_cast<int>(source));
+    // 데이터 수신 이벤트 처리
+}
 
-    // Serial JTAG 또는 UDP에서 들어온 데이터는 ESP-NOW로 전송
+
+/**
+ * @brief 
+ *      1. Serial JTAG에서 데이터가 들어왔는지 주기적으로 체크하여 연결 상태 업데이트 (예: 2초 이상 데이터 수신 없으면 연결 끊김으로 간주)
+ * @param pvParameters 
+ */
+void BridgeCore::process_task(void *pvParameters)
+{
+
+    BridgeCore* core = static_cast<BridgeCore*>(pvParameters);
+    Types::QueueMessage* msg = nullptr;
+
+    while (true) {
+
+        // 1초 동안 데이터가 없으면 ESP_ERR_TIMEOUT 반환
+        esp_err_t ret = core->queue_manager_->dequeue_packet(&msg, pdMS_TO_TICKS(1000));
+        if (ret == ESP_OK) {
+            // 1. 소스에 따른 분기 처리
+            core->handle_incoming_data(msg);
+            // 2. 처리가 끝난 메시지는 반드시 여기서 메모리 해제
+            core->queue_manager_->free_message(msg);
+        }
+        else if (ret == ESP_ERR_TIMEOUT) {
+        // 여기서 로그를 찍으면 1초마다 로그창이 도배되므로 
+        // 로그 대신 상태 체크를 수행합니다.
+        }
+
+        // 데이터 유무와 상관없이 주기적으로 연결 상태 체크
+       core->check_connection_timeout();
+
+    }
+
+}
+
+void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
+{
+    const uint8_t* data = msg->data;
+    size_t len = msg->length;
+    Types::DataSource source = msg->source;
+
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {
 //        if(wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW)){
             esp_err_t ret = wifi_driver_->send_espnow(data, len);
@@ -253,7 +315,7 @@ void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSo
 
         esp_err_t ret;
 
-        if (serial_jtag_driver_->connected()){
+        if (serial_jtag_driver_->is_connected()){
             ret = serial_jtag_driver_->send_data(data, len);
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "Failed to send data via Serial JTAG");
@@ -271,17 +333,28 @@ void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSo
             }
 //        }
     }
-
-    // // 큐에 데이터 추가
-    // esp_err_t ret = queue_manager_->enqueue_packet(data, len, source);
-    // if (ret != ESP_OK) {
-    //     ESP_LOGW(TAG, "Failed to enqueue packet");
-    // }
-
-    // MAVLink 처리
-    // mavlink_service_->process_packet(data, len);
 }
 
+void BridgeCore::check_connection_timeout() {
+    
+    //ESP_LOGI(TAG, "check_connection_timeout called");
+
+    bool is_now_connected = (serial_jtag_driver_->get_time_since_last_rx() < 2'000'000); // 2초 이상 데이터 수신 없으면 연결 끊김으로 간주
+    bool last_state = serial_jtag_driver_->is_connected();
+
+    // 상태가 변했을 때만 처리 (Edge Detection)
+    if (is_now_connected != last_state) {
+        serial_jtag_driver_->set_connected(is_now_connected);
+
+        if (is_now_connected) {
+            ESP_LOGI(TAG, "Serial JTAG: [CONNECTED]");
+            // TODO: 나중에 여기에 '연결됨' 이벤트 발생 코드 삽입
+        } else {
+            ESP_LOGW(TAG, "Serial JTAG: [DISCONNECTED]");
+            // TODO: 나중에 여기에 '연결 끊김' 이벤트 발생 코드 삽입
+        }
+    }
+}
 
 /**
  * @brief 타이머 틱 이벤트 처리 함수
@@ -289,5 +362,6 @@ void BridgeCore::on_data_received(const uint8_t* data, size_t len, Types::DataSo
 void BridgeCore::on_timer_tick() {
     //ESP_LOGI(TAG, "Timer tick event received");    
 }
+
 
 } // namespace Core

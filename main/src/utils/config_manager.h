@@ -4,6 +4,7 @@
 #include <array>
 #include "bridge_types.h"
 
+
 namespace Utils {
 
 class ConfigManager {
@@ -35,10 +36,5 @@ private:
 
     static const char* TAG;
 };
-
-// 호환성을 위한 기존 함수들
-extern void init_config();
-extern uint8_t drone_mac[6];
-extern uint8_t bridge_mac[6];
 
 } // namespace Utils

@@ -11,23 +11,24 @@ namespace Utils {
 const char* ConfigManager::TAG = "CONFIG_MANAGER";
 
 bool ConfigManager::initialized_ = false;
-uint8_t ConfigManager::drone_mac_[6] = {};
-uint8_t ConfigManager::bridge_mac_[6] = {};
+uint8_t ConfigManager::drone_mac_[6]  = {0xB0, 0xCB, 0xD8, 0xD7, 0x2E, 0xB0}; // 드론의 MAC 주소 기본값 (환경변수나 하드코딩된 값 사용)
+uint8_t ConfigManager::bridge_mac_[6] = {0x1C, 0xDB, 0xD4, 0xAE, 0x82, 0x04}; // 기본값 설정 (환경변수나 하드코딩된 값 사용)
+
 
 Types::WiFiConfig ConfigManager::wifi_config_ = {
-    .ssid = "GroundStation_AP",
-    .password = "groundstation2024",
-    .channel = 6,
-    .auth_mode = WIFI_AUTH_WPA2_PSK,
-    .hidden = false,
+    .ssid       = CONFIG_GS_WIFI_SSID ? CONFIG_GS_WIFI_SSID : "GroundStationWiFi",
+    .password   = CONFIG_GS_WIFI_PASSWORD ? CONFIG_GS_WIFI_PASSWORD : "groundstation2024",
+    .channel    = CONFIG_GS_ESPNOW_CHANNEL,
+    .auth_mode  = WIFI_AUTH_WPA2_PSK,
+    .hidden     = false,
     .max_connections = 4
 };
 
 Types::EspNowConfig ConfigManager::espnow_config_ = {
-    .peer_mac = {},
-    .channel = 6,
-    .phy_mode = WIFI_PHY_MODE_11B,
-    .rate = WIFI_PHY_RATE_2M_S
+    .peer_mac   = {},       // CONFIG_GS_DRONE_MAC에서 읽어올 예정
+    .channel    = CONFIG_GS_ESPNOW_CHANNEL,
+    .phy_mode   = WIFI_PHY_MODE_11B,
+    .rate       = WIFI_PHY_RATE_2M_S
 };
 
 esp_err_t ConfigManager::initialize() {
@@ -70,6 +71,10 @@ esp_err_t ConfigManager::initialize() {
         }
         ESP_LOGI(TAG, "Using default drone MAC");
     }
+
+    // ESP-NOW 피어 MAC 주소는 드론 MAC 주소로 설정
+    memcpy(espnow_config_.peer_mac, drone_mac_, sizeof(espnow_config_.peer_mac));
+
 
     // 브리지 MAC 주소 읽기
     mac_len = sizeof(bridge_mac_);
@@ -159,13 +164,5 @@ Types::EspNowConfig ConfigManager::get_espnow_config() {
 void ConfigManager::set_espnow_config(const Types::EspNowConfig& config) {
     espnow_config_ = config;
 }
-
-// 호환성을 위한 기존 함수들
-void init_config() {
-    ConfigManager::initialize();
-}
-
-uint8_t drone_mac[6] ={0xB0, 0xCB, 0xD8, 0xD7, 0x2E, 0xB0};
-uint8_t bridge_mac[6];
 
 } // namespace Utils

@@ -5,7 +5,11 @@
 #include <driver/gpio.h>
 #include <esp_log.h>
 #include <cstring>
-#include "esp_timer.h"
+#include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+#include "queue_manager.h"
 #include "bridge_core.h"
 
 /**
@@ -22,17 +26,17 @@ namespace Drivers {
 
 const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
 // Global select callback for static callback function
-static usj_select_notif_callback_t g_select_callback = nullptr;
-
+//static usj_select_notif_callback_t g_select_callback = nullptr;
+Core::QueueManager* SerialJtagDriver::queue_mgr_ = nullptr;
+SerialJtagDriver* SerialJtagDriver::serial_jtag_driver_ = nullptr;
+SemaphoreHandle_t SerialJtagDriver::rx_sem_ = nullptr;
 /**
  * @brief Construct a new Serial Jtag Driver:: Serial Jtag Driver object    
  * 
  */
 SerialJtagDriver::SerialJtagDriver()
-    :buffer_size_(2048), initialized_(false), event_queue_(nullptr),
-     running_(false), connected_(false), last_rx_timestamp_(0) {
+    :buffer_size_(2048), initialized_(false), running_(false),connected_(false), last_rx_timestamp_(0), event_queue_(nullptr) {
     ESP_LOGI(TAG, "SerialJtagDriver created for UART Serial JTAG");
-
 }
 
 /**
@@ -51,6 +55,9 @@ SerialJtagDriver::~SerialJtagDriver() {
 esp_err_t SerialJtagDriver::initialize() {
     if (initialized_) return ESP_OK;
 
+    //callback 함수에서 자신의 멤버에 접근할 수 있도록 static 멤버에 자기 자신 포인터 저장
+    serial_jtag_driver_ = this; // static 멤버에 자기 자신 포인터 저장
+
     usb_serial_jtag_driver_config_t cfg = {};
     cfg.rx_buffer_size = buffer_size_;
     cfg.tx_buffer_size = buffer_size_;
@@ -61,8 +68,10 @@ esp_err_t SerialJtagDriver::initialize() {
         return ret;
     }
 
-
-    
+    if(rx_sem_ == nullptr) {
+       rx_sem_ = xSemaphoreCreateBinary();
+    }
+ 
     initialized_ = true;
     ESP_LOGI(TAG, "Serial JTAG initialized successfully");
      return ESP_OK;
@@ -74,7 +83,10 @@ esp_err_t SerialJtagDriver::initialize() {
  */
 void SerialJtagDriver::deinitialize() {
     if (!initialized_) return;
-
+    if(rx_sem_) {
+        vSemaphoreDelete(rx_sem_);
+        rx_sem_ = nullptr;
+    }
     usb_serial_jtag_driver_uninstall();
     event_queue_ = nullptr;
     initialized_ = false;
@@ -153,9 +165,7 @@ esp_err_t SerialJtagDriver::start(void){
         ESP_LOGE(TAG, "Serial JTAG not initialized or already running");
         return ESP_OK;
     }
-    
-    // Register select notification callback
-    usb_serial_jtag_set_select_notif_callback(select_notif_callback);
+  
 
 
     running_ = true;
@@ -164,12 +174,6 @@ esp_err_t SerialJtagDriver::start(void){
 }
 
 
-bool SerialJtagDriver::connected()
-{
-    connected_ = usb_serial_jtag_is_connected();
-    return  connected_;
-}
-
 void SerialJtagDriver::stop() {
     if (running_) {
         running_ = false;
@@ -177,81 +181,57 @@ void SerialJtagDriver::stop() {
     }
 }
 
+void SerialJtagDriver::register_select_callback(void)
+{
+    // Register select notification callback
+    usb_serial_jtag_set_select_notif_callback(select_notif_callback);
+}
+
+void SerialJtagDriver::unregister_select_callback(void)
+{
+    // Unregister select notification callback by setting it to nullptr
+    usb_serial_jtag_set_select_notif_callback(nullptr); 
+}
 
 /**
  * @brief Select notification callback (정적 멤버 함수)
  *        USB Serial JTAG의 select() 이벤트에 대한 콜백
  *        callback模式下에서 데이터 수신 시 직접 데이터를 읽어 BridgeCore로 전달
- * 
+ *
  * @param event 이벤트 타입 (USJ_SELECT_READ_NOTIF 또는 USJ_SELECT_WRITE_NOTIF)
  * @param task_woken FreeRTOS 태스크 각石 여부
  */
 void SerialJtagDriver::select_notif_callback(usj_select_notif_t event, int* task_woken) {
-    switch (event) {
-        case USJ_SELECT_READ_NOTIF: {
-            if (task_woken) *task_woken = 0; // 기본적으로 태스크는 깨우지 않음
+    if (rx_sem_) {
+        BaseType_t high_priority_task_woken = pdFALSE;
+        xSemaphoreGiveFromISR(rx_sem_, &high_priority_task_woken);
+        if (high_priority_task_woken) portYIELD_FROM_ISR();
+    }
+}
 
-            if (!usb_serial_jtag_is_connected()) {
-                ESP_LOGW(TAG, "Select read notification received but Serial JTAG is not connected");
-                break;
-            }
-            
-            { // 연결 상태 업데이트 및 타임스탬프 기록
-                Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-                SerialJtagDriver& driver = bridge.get_serial_jtag_driver(); // BridgeCore의 SerialJtagDriver 인스턴스에 접근
-                // 연결 상태 업데이트 및 타임스탬프 기록
-                driver.update_last_rx_timestamp();
-                driver.set_connected(true);
-            }
+void SerialJtagDriver::rx_task(void* pvParameters) {
+    SerialJtagDriver* self = static_cast<SerialJtagDriver*>(pvParameters);
+    uint8_t buffer[256];
 
-            ESP_LOGD(TAG, "Select read notification - reading data...");
-            // callback에서 직접 데이터 읽기
-            uint8_t buffer[256];
-            while (true) {
-                int read_len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0);
-                if (read_len > 0) {
-                    ESP_LOGD(TAG, "Callback read %d bytes", read_len);
-                    // BridgeCore로 데이터 전달
-                    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-                    bridge.on_data_received(buffer, read_len, Types::DataSource::UART_SERIAL);
-                } else {
-                    break;
-                }
+    while (true) {
+        // 콜백이 신호를 줄 때까지 무한 대기
+        if (xSemaphoreTake(rx_sem_, portMAX_DELAY) == pdTRUE) {
+            // 이제 '태스크' 환경이므로 마음껏 읽고 큐에 넣음
+            int len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0);
+            if (len > 0) {
+                queue_mgr_->enqueue_packet(buffer, len, Types::DataSource::UART_SERIAL);
+                self->update_last_rx_timestamp();
+                self->set_connected(true);
             }
-            break;
         }
-        case USJ_SELECT_WRITE_NOTIF:
-            ESP_LOGD(TAG, "Select write notification - buffer ready");
-            break;
-        case USJ_SELECT_ERROR_NOTIF:
-            ESP_LOGE(TAG, "Select error notification");
-            break;
-        default:
-            break;
-    }
-    
-    // 사용자 정의 콜백이 있으면 호출
-    if (g_select_callback != nullptr) {
-        g_select_callback(event, task_woken);
-    } else if (task_woken != nullptr) {
-        *task_woken = 0;
     }
 }
 
-/**
- * @brief Set select notification callback
- * 
- * @param callback 사용자 정의 콜백 함수
- */
-void SerialJtagDriver::set_select_callback(usj_select_notif_callback_t callback) {
-    g_select_callback = callback;
-    ESP_LOGI(TAG, "Select callback registered");
-}
-// // Serial JTAG select callback 등록
-// serial_jtag_driver_->set_select_callback([](usj_select_notif_t event, int* task_woken) {
-//     ESP_LOGD(TAG, "Serial JTAG event: %d", event);
-//     if (task_woken) *task_woken = 0;
-// });
+
+
+
+
+
 
 
 } // namespace Drivers

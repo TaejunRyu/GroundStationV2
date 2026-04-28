@@ -4,7 +4,8 @@
 #include <esp_err.h>
 #include <freertos/FreeRTOS.h>
 #include "esp_wifi_types.h"
-
+#include "sdkconfig.h"
+    
 // 공통 타입 정의 (기존 ryu_types.h와 ryu_config.h 통합)
 namespace Types {
 
@@ -27,20 +28,20 @@ enum class DataSource {
     INTERNAL
 };
 
-// 패킷 타입 (기존 packet_type_t 확장)
-enum class PacketType {
-    ON_ESP_NOW_RECV = 0x00,
-    ON_UART_RECV    = 0x01,
-    ON_UDP_RECV     = 0x02,
-    ON_BRIDGE_MAKE  = 0x03,
-    ON_RC_OVERRIDE  = 0x04,
-    MAVLINK_HEARTBEAT,
-    MAVLINK_COMMAND,
-    MAVLINK_STATUS,
-    RC_CHANNELS,
-    TELEMETRY,
-    RAW_DATA
-};
+// // 패킷 타입 (기존 packet_type_t 확장)
+// enum class PacketType {
+//     ON_ESP_NOW_RECV = 0x00,
+//     ON_UART_RECV    = 0x01,
+//     ON_UDP_RECV     = 0x02,
+//     ON_BRIDGE_MAKE  = 0x03,
+//     ON_RC_OVERRIDE  = 0x04,
+//     MAVLINK_HEARTBEAT,
+//     MAVLINK_COMMAND,
+//     MAVLINK_STATUS,
+//     RC_CHANNELS,
+//     TELEMETRY,
+//     RAW_DATA
+// };
 
 // 이벤트 타입 (기존 bridge_event_type 확장)
 enum class BridgeEvent {
@@ -153,17 +154,17 @@ struct CommStats {
 
 // 시스템 설정 상수
 namespace Config {
-    inline constexpr uint8_t SYSTEM_ID = 1;
-    inline constexpr uint8_t COMPONENT_ID = 240;  // MAV_COMPONENT_ID_UDP_BRIDGE
-    inline constexpr uint8_t DRONE_COMP_ID = 1;
+    inline constexpr uint8_t    SYSTEM_ID      = CONFIG_GS_MAV_SYSID;
+    inline constexpr uint8_t    COMPONENT_ID   = CONFIG_GS_MAV_COMPID;  // MAV_COMPONENT_ID_UDP_BRIDGE
+    inline constexpr uint8_t    DRONE_COMP_ID  = CONFIG_GS_MAV_DRONE_COMPID; // MAV_COMPONENT_ID_DRONE
 
-    inline constexpr uint8_t ESPNOW_CHANNEL = 6;
-    inline constexpr uint16_t ESP_NOW_MAX_LEN = 290;
-    inline constexpr uint16_t UPDOWNLINK_QUEUE_SIZE = 40;
+    inline constexpr uint8_t    ESPNOW_CHANNEL = CONFIG_GS_ESPNOW_CHANNEL;
+    inline constexpr uint16_t   ESP_NOW_MAX_LEN = 290;
+    inline constexpr uint16_t   UPDOWNLINK_QUEUE_SIZE = 40;
 
-    inline constexpr uint16_t UDP_PORT = 14550;
-    inline constexpr size_t UDP_RX_BUFFER_SIZE = 4096;
-    inline constexpr size_t MAX_MESSAGE_SIZE = 2048;
+    inline constexpr uint16_t   UDP_PORT = 14550;
+    inline constexpr size_t     UDP_RX_BUFFER_SIZE = 4096;
+    inline constexpr size_t     MAX_MESSAGE_SIZE = 2048;
 }
 
 } // namespace Types

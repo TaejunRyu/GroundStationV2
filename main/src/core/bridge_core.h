@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "bridge_types.h"
 
 // 1. 클래스 내부가 아닌 여기서 먼저 선언하세요.
@@ -13,7 +15,6 @@ namespace Services {
 
 namespace Drivers {
     class WiFiDriver;
-    //class UartDriver;
     class SerialJtagDriver;
 }
 
@@ -57,8 +58,12 @@ public:
     }
 
     Drivers::SerialJtagDriver& get_serial_jtag_driver() { return *serial_jtag_driver_; }
+    Core::QueueManager& get_queue_manager() { return *queue_manager_; }
 
-private:
+    static void process_task(void* pvParameters);
+    void handle_incoming_data(Types::QueueMessage* msg);
+    void check_connection_timeout();
+private: 
 
     // 서비스 객체들 (unique_ptr로 관리)
     std::unique_ptr<Utils::ConfigManager> config_manager_;
@@ -71,6 +76,8 @@ private:
     std::unique_ptr<Core::QueueManager> queue_manager_;
 
     Types::SystemState system_state_;
+    TaskHandle_t process_task_handle_;
+    TaskHandle_t serial_jtag_rx_task_handle_;
     static const char* TAG;
 };
 

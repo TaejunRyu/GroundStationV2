@@ -1,19 +1,19 @@
 menu "Ground Station Configuration"
 
     config GS_MAV_SYSID
-        int "System id of MAVLINK"
+        int "Bridge System id of MAVLINK"
         default 1
         help 
             Don't Change the Number
 
-    config GS_MAV_BRIDGE_COMPID
-        int "Component id of MAVLINK"
+    config GS_MAV_COMPID
+        int "Bridge Component id of MAVLINK"
         default 198
         help 
             MAV_COMP_ID_PAIRING_MANAGER : 198
-
+    
     config GS_MAV_DRONE_COMPID
-        int "Component id of MAVLINK"
+        int "Drone Component id of MAVLINK"
         default 1
         help 
             Don't Change the Number

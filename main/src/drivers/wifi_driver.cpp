@@ -10,6 +10,7 @@
 #include "nvs_flash.h"
 #include <c_library_v2/common/mavlink.h>
 #include "bridge_core.h"
+#include "queue_manager.h"
 
 namespace Drivers {
 
@@ -20,9 +21,9 @@ const char* WiFiDriver::TAG = "WIFI_DRIVER";
  */
 WiFiDriver::WiFiDriver()
     : udp_rx_buffer_(nullptr), initialized_(false), ap_started_(false),
-      espnow_initialized_(false), udp_initialized_(false), rssi_(0),
-      udp_pcb_(nullptr), event_loop_(nullptr) ,remote_rssi_(0), 
-      remote_noise_floor_(0), espnow_connected_(false), udp_connected_(false) {
+      espnow_initialized_(false), udp_initialized_(false),espnow_rx_timestamp_(0),udp_rx_timestamp_(0),
+      espnow_connected_(false), udp_connected_(false),rssi_(0), noise_floor_(0), remote_rssi_(0), 
+      remote_noise_floor_(0), udp_pcb_(nullptr), event_loop_(nullptr) {
     memset(drone_mac_, 0, sizeof(drone_mac_));
     ESP_LOGI(TAG, "WiFiDriver created");
 }
@@ -591,7 +592,9 @@ void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint
     // BridgeCore 인스턴스를 통해 콜백 호출
     //ESP_LOGI(TAG, "ESP-NOW received %d bytes", len);
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
-    bridge.on_data_received(data, len, Types::DataSource::WIFI_ESPNOW);
+    bridge.get_queue_manager().enqueue_packet(data, len, Types::DataSource::WIFI_ESPNOW);
+ 
+    //bridge.on_data_received(data, len, Types::DataSource::WIFI_ESPNOW);
     ESP_LOGD(TAG, "ESP-NOW received %d bytes", len);
 }
 
@@ -634,24 +637,25 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
     }
 
     //ESP_LOGI(TAG, "UDP received %d bytes from %s:%d", p->tot_len, ipaddr_ntoa(addr), port);
-    //Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     //bridge.on_data_received(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
-
+    bridge.get_queue_manager().enqueue_packet(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
     
-    // MAVLink 파싱 및 콜백 호출
-    static mavlink_message_t msg;
-    static mavlink_status_t status;
-    static uint8_t temp_buffer[1024];
+    // // MAVLink 파싱 및 콜백 호출
+    // static mavlink_message_t msg;
+    // static mavlink_status_t status;
+    // static uint8_t temp_buffer[1024];
 
-    for (size_t ii = 0; ii < p->tot_len; ii++) {
-        if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
-            int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
+    // for (size_t ii = 0; ii < p->tot_len; ii++) {
+    //     if (mavlink_parse_char(MAVLINK_COMM_2, process_buffer[ii], &msg, &status)) {
+    //         int packet_len = mavlink_msg_to_send_buffer(temp_buffer, &msg);
 
-            if (driver->data_callback_) {
-                driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
-            }
-        }
-    }
+    //         if (driver->data_callback_) {
+    //             driver->data_callback_(temp_buffer, packet_len, Types::DataSource::WIFI_UDP);
+    //         }
+    //     }
+    // }
 
     pbuf_free(p);
 }
