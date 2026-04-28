@@ -21,7 +21,8 @@ const char* WiFiDriver::TAG = "WIFI_DRIVER";
 WiFiDriver::WiFiDriver()
     : udp_rx_buffer_(nullptr), initialized_(false), ap_started_(false),
       espnow_initialized_(false), udp_initialized_(false), rssi_(0),
-      udp_pcb_(nullptr), event_loop_(nullptr) {
+      udp_pcb_(nullptr), event_loop_(nullptr) ,remote_rssi_(0), 
+      remote_noise_floor_(0), espnow_connected_(false), udp_connected_(false) {
     memset(drone_mac_, 0, sizeof(drone_mac_));
     ESP_LOGI(TAG, "WiFiDriver created");
 }
@@ -459,9 +460,9 @@ void WiFiDriver::set_data_callback(std::function<void(const uint8_t*, size_t, Ty
 bool WiFiDriver::is_connected(Types::DataSource source) const {
     switch (source) {
         case Types::DataSource::WIFI_UDP:
-            return udp_initialized_;
+            return udp_connected_ && udp_initialized_;
         case Types::DataSource::WIFI_ESPNOW:
-            return espnow_initialized_;
+            return espnow_connected_ && espnow_initialized_;
         default:
             return false;
     }
@@ -474,6 +475,32 @@ bool WiFiDriver::is_connected(Types::DataSource source) const {
  */
 int8_t WiFiDriver::get_rssi() const {
     return rssi_;
+}
+
+/**
+ * @brief 
+ * 노이즈 플로어 값 조회 함수
+ * @return int8_t 
+ */
+int8_t WiFiDriver::get_noise_floor() const {
+    return noise_floor_;
+}
+
+/**
+ * @brief 
+ * 원격 RSSI 값 조회 함수
+ * @return int8_t 
+ */
+int8_t WiFiDriver::get_remote_rssi() const {
+    return remote_rssi_;
+}
+/**
+ * @brief 
+ * 원격 노이즈 플로어 값 조회 함수
+ * @return int8_t 
+ */
+int8_t WiFiDriver::get_remote_noise_floor() const {
+    return remote_noise_floor_;
 }
 
 /**
@@ -628,5 +655,9 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
 
     pbuf_free(p);
 }
+
+
+
+
 
 } // namespace Drivers

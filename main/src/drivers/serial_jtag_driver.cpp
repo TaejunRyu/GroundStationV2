@@ -5,6 +5,7 @@
 #include <driver/gpio.h>
 #include <esp_log.h>
 #include <cstring>
+#include "esp_timer.h"
 #include "bridge_core.h"
 
 /**
@@ -20,7 +21,6 @@
 namespace Drivers {
 
 const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
-
 // Global select callback for static callback function
 static usj_select_notif_callback_t g_select_callback = nullptr;
 
@@ -29,8 +29,10 @@ static usj_select_notif_callback_t g_select_callback = nullptr;
  * 
  */
 SerialJtagDriver::SerialJtagDriver()
-    :buffer_size_(2048), initialized_(false), event_queue_(nullptr) {
+    :buffer_size_(2048), initialized_(false), event_queue_(nullptr),
+     running_(false), connected_(false), last_rx_timestamp_(0) {
     ESP_LOGI(TAG, "SerialJtagDriver created for UART Serial JTAG");
+
 }
 
 /**
@@ -187,6 +189,21 @@ void SerialJtagDriver::stop() {
 void SerialJtagDriver::select_notif_callback(usj_select_notif_t event, int* task_woken) {
     switch (event) {
         case USJ_SELECT_READ_NOTIF: {
+            if (task_woken) *task_woken = 0; // 기본적으로 태스크는 깨우지 않음
+
+            if (!usb_serial_jtag_is_connected()) {
+                ESP_LOGW(TAG, "Select read notification received but Serial JTAG is not connected");
+                break;
+            }
+            
+            { // 연결 상태 업데이트 및 타임스탬프 기록
+                Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+                SerialJtagDriver& driver = bridge.get_serial_jtag_driver(); // BridgeCore의 SerialJtagDriver 인스턴스에 접근
+                // 연결 상태 업데이트 및 타임스탬프 기록
+                driver.update_last_rx_timestamp();
+                driver.set_connected(true);
+            }
+
             ESP_LOGD(TAG, "Select read notification - reading data...");
             // callback에서 직접 데이터 읽기
             uint8_t buffer[256];
@@ -230,6 +247,11 @@ void SerialJtagDriver::set_select_callback(usj_select_notif_callback_t callback)
     g_select_callback = callback;
     ESP_LOGI(TAG, "Select callback registered");
 }
+// // Serial JTAG select callback 등록
+// serial_jtag_driver_->set_select_callback([](usj_select_notif_t event, int* task_woken) {
+//     ESP_LOGD(TAG, "Serial JTAG event: %d", event);
+//     if (task_woken) *task_woken = 0;
+// });
 
 
 } // namespace Drivers

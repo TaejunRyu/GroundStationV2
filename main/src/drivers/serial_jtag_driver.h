@@ -38,6 +38,18 @@ public:
     // Select notification callback 설정
     void set_select_callback(usj_select_notif_callback_t callback);
 
+
+    uint64_t get_last_rx_timestamp() const { return last_rx_timestamp_; }
+    uint64_t get_time_since_last_rx() const {
+        uint64_t now = esp_timer_get_time();
+        return (last_rx_timestamp_ > 0) ? (now - last_rx_timestamp_) : -1;
+    }
+    void reset_last_rx_timestamp() { last_rx_timestamp_ = 0; }
+    void update_last_rx_timestamp() { last_rx_timestamp_ = esp_timer_get_time(); }
+
+    bool is_connected() const { return connected_; }
+    void set_connected(bool status) { connected_ = status; }
+    
 private:
     // Static callback wrapper for USB Serial JTAG
     static void select_notif_callback(usj_select_notif_t event, int* task_woken);
@@ -45,9 +57,13 @@ private:
     size_t buffer_size_;
     bool initialized_;
     bool running_;
-    bool connected_;
-    QueueHandle_t event_queue_;
 
+    // USB Serial JTAG 연결 상태 추적
+    bool connected_;
+    uint64_t last_rx_timestamp_;
+
+    QueueHandle_t event_queue_;
+    //static usj_select_notif_callback_t g_select_callback;// = nullptr;
     static const char* TAG;
 };
 

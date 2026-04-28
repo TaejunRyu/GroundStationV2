@@ -37,11 +37,18 @@ public:
     void register_espnow_callbacks();
     void unregister_espnow_callbacks();
 
-    // 상태 조회
+    // 상태 조회 및 정보 제공
     bool is_connected(Types::DataSource source) const;
     int8_t get_rssi() const;
-    std::array<uint8_t, 6> get_my_mac_address() const;
+    void set_rssi(int8_t rssi) { rssi_ = rssi; }
+    int8_t get_noise_floor() const;
+    void set_noise_floor(int8_t noise_floor) { noise_floor_ = noise_floor; }
+    int8_t get_remote_rssi() const;
+    void set_remote_rssi(int8_t rssi) { remote_rssi_ = rssi; }
+    int8_t get_remote_noise_floor() const;
+    void set_remote_noise_floor(int8_t noise_floor) { remote_noise_floor_ = noise_floor; }
 
+    std::array<uint8_t, 6> get_my_mac_address() const;
     // 이벤트
     esp_event_loop_handle_t get_event_loop() const { return event_loop_; }
 
@@ -64,9 +71,22 @@ private:
 
     bool initialized_;
     bool ap_started_;
+    
+    // 초기화 상태 플래그
     bool espnow_initialized_;
     bool udp_initialized_;
-    int8_t rssi_;
+
+    // 데이터 수신 타임스탬프
+    uint64_t espnow_rx_timestamp_;
+    uint64_t udp_rx_timestamp_;
+
+    //연결 상태 플래그
+    bool espnow_connected_;
+    bool udp_connected_;
+    
+    // 드론과 브리지의 RSSI 및 노이즈 플로어 정보
+    int8_t rssi_, noise_floor_;
+    int8_t remote_rssi_, remote_noise_floor_;
 
     // UDP 관련
     struct udp_pcb* udp_pcb_;

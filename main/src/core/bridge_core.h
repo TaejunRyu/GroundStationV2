@@ -56,6 +56,8 @@ public:
         return *instance;
     }
 
+    Drivers::SerialJtagDriver& get_serial_jtag_driver() { return *serial_jtag_driver_; }
+
 private:
 
     // 서비스 객체들 (unique_ptr로 관리)
