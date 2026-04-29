@@ -327,30 +327,8 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
     Types::DataSource source = msg->source;
 
     // MAVLink 파싱 및 콜백 호출
-    static mavlink_message_t serial_msg;
-    static mavlink_status_t serial_status;
-
-    static mavlink_message_t udp_msg;
-    static mavlink_status_t udp_status;
-    
-    static mavlink_message_t espnow_msg;
-    static mavlink_status_t esp_now_status;
-
-    switch(source){
-        case Types::DataSource::UART_SERIAL:{
-            break;
-        }
-        case Types::DataSource::WIFI_UDP:{
-            break;
-        }
-        case Types::DataSource::WIFI_ESPNOW:{
-            break;
-        }
-        case Types::DataSource::INTERNAL:{
-            break;
-        }
-    }
-
+    static mavlink_message_t mav_msg;
+    static mavlink_status_t status;
 
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {
         if(wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW)){
@@ -371,13 +349,16 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
             bool should_forward = true; // 중계 여부 결정 플래그
 
             for (size_t ii = 0; ii < len; ii++) {
-                if (mavlink_parse_char(MAVLINK_COMM_2, data[ii], &mav_msg, &status)) {
+                if (mavlink_parse_char(MAVLINK_COMM_2, data[ii], &mav_msg, &status)) {                    
                     if(source == Types::DataSource::WIFI_ESPNOW){
                         if(mav_msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS){
+                           
                             set_rssi(mavlink_msg_radio_status_get_rssi(&mav_msg));
                             set_noise_floor(mavlink_msg_radio_status_get_noise(&mav_msg));
                             // 가로챈 메시지는 원본을 중계하지 않음
                             should_forward = false;           
+                        } else{
+                             
                         }
                     }            
                 }

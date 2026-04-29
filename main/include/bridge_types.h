@@ -22,10 +22,10 @@ enum class SystemState {
 // 데이터 소스
 enum class DataSource {
     WIFI_UDP,
-    WIFI_ESPNOW,
     UART_SERIAL,
-    UART_FLYSKY,
-    INTERNAL
+    WIFI_ESPNOW,
+    INTERNAL,
+    UART_FLYSKY
 };
 
 // // 패킷 타입 (기존 packet_type_t 확장)

@@ -71,7 +71,7 @@ esp_err_t QueueManager::enqueue_packet(const uint8_t* data, size_t len, Types::D
     message->length = len;
     memcpy(message->data, data, len);
 
-    if (xQueueSend(packet_queue_, &message, pdMS_TO_TICKS(100)) != pdTRUE) {
+    if (xQueueSend(packet_queue_, &message, pdMS_TO_TICKS(50)) != pdTRUE) {
         //ESP_LOGW(TAG, "Packet queue full, dropping message");
         //free_message(message);
         //return ESP_ERR_TIMEOUT;

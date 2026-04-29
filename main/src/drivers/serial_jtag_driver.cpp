@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <c_library_v2/common/mavlink.h>
 
 #include "queue_manager.h"
 #include "bridge_core.h"
@@ -212,8 +213,9 @@ void SerialJtagDriver::select_notif_callback(usj_select_notif_t event, int* task
 void SerialJtagDriver::rx_task(void* pvParameters) {
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     SerialJtagDriver* self = static_cast<SerialJtagDriver*>(pvParameters);
-    uint8_t buffer[256];
-
+    uint8_t buffer[290],buf[290];
+    static mavlink_message_t msg;
+    static mavlink_status_t  status;
     while (true) {
         // 콜백이 신호를 줄 때까지 무한 대기
         if (xSemaphoreTake(rx_sem_, portMAX_DELAY) == pdTRUE) {
@@ -226,7 +228,13 @@ void SerialJtagDriver::rx_task(void* pvParameters) {
             }
             // 읽을 데이터가 없을 때까지 계속 읽음 (버퍼 비우기)
             while ((len = usb_serial_jtag_read_bytes(buffer, sizeof(buffer), 0)) > 0) {
-                self->queue_mgr_->enqueue_packet(buffer, len, Types::DataSource::UART_SERIAL);    
+                for (size_t ii = 0; ii < len; ii++) {
+                    if (mavlink_parse_char(MAVLINK_COMM_3, buffer[ii], &msg, &status)) {                        
+                        //ESP_LOGI(TAG, "Mavlink Done [Seq: %u, Index: %zu/%d]", msg.seq, ii, len);                       
+                        uint16_t mav_len = mavlink_msg_to_send_buffer(buf, &msg);
+                        self->queue_mgr_->enqueue_packet(buf, mav_len, Types::DataSource::UART_SERIAL);    
+                    }
+                }
             }
         }
     }

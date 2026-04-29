@@ -7,7 +7,7 @@
 #include <lwip/udp.h>
 #include <array>
 #include <atomic>
-
+#include <c_library_v2/common/mavlink.h>
 #include "bridge_types.h"
 
 namespace Drivers {
@@ -109,6 +109,10 @@ private:
 
     // 이벤트 루프
     esp_event_loop_handle_t event_loop_;
+
+    //mavlink v2 작업용...
+    static mavlink_message_t udp_msg,espnow_msg;
+    static mavlink_status_t  udp_status,espnow_status;
 
     static const char* TAG;
 };

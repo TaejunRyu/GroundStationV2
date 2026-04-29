@@ -8,13 +8,19 @@
 #include <esp_mac.h>
 #include <esp_log.h>
 #include "nvs_flash.h"
-#include <c_library_v2/common/mavlink.h>
+
 #include "bridge_core.h"
 #include "queue_manager.h"
 #include "led_strip_driver.h"
 namespace Drivers {
 
 const char* WiFiDriver::TAG = "WIFI_DRIVER";
+
+    //mavlink v2 작업용...
+mavlink_message_t WiFiDriver::udp_msg{},WiFiDriver::espnow_msg{};
+mavlink_status_t  WiFiDriver::udp_status{},WiFiDriver::espnow_status{};
+
+
 /**
  * @brief Construct a new Wi Fi Driver:: Wi Fi Driver object    
  * 
@@ -558,6 +564,7 @@ void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint
         ESP_LOGW(TAG, "Received ESP-NOW packet with null source address");
         return;
     }
+
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     bridge.get_wifi_driver().update_last_espnow_rx_timestamp();
     if (!bridge.get_wifi_driver().is_espnow_connected()) {
@@ -567,10 +574,14 @@ void WiFiDriver::espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint
     }
     bridge.set_remote_rssi(recv_info->rx_ctrl->rssi);
     bridge.set_remote_noise_floor(recv_info->rx_ctrl->noise_floor);
-
-    bridge.get_queue_manager().enqueue_packet(data, len, Types::DataSource::WIFI_ESPNOW);
- 
-    //bridge.on_data_received(data, len, Types::DataSource::WIFI_ESPNOW);
+    uint8_t buf[290];
+    for (size_t ii = 0; ii < len; ii++) {
+        if (mavlink_parse_char(MAVLINK_COMM_3, data[ii], &WiFiDriver::espnow_msg, &WiFiDriver::espnow_status)) {
+            //ESP_LOGI(TAG, "Mavlink Done [Seq: %u, Index: %zu/%d]", WiFiDriver::espnow_msg.seq, ii, len);    
+            uint16_t len = mavlink_msg_to_send_buffer(buf, &WiFiDriver::espnow_msg);
+            bridge.get_queue_manager().enqueue_packet(buf, len, Types::DataSource::WIFI_ESPNOW);
+        }
+    }
     ESP_LOGD(TAG, "ESP-NOW received %d bytes", len);
 }
 
@@ -632,7 +643,15 @@ void WiFiDriver::udp_recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *
         bridge.get_led_strip_driver().set_status_ok();
         ESP_LOGI(TAG, "Wi-Fi UDP: [CONNECTED]");
     }
-    bridge.get_queue_manager().enqueue_packet(process_buffer, p->tot_len, Types::DataSource::WIFI_UDP);
+
+    uint8_t buf[290];
+    for (size_t ii = 0; ii <  p->len; ii++) {
+        if (mavlink_parse_char(MAVLINK_COMM_3,process_buffer[ii], &WiFiDriver::udp_msg, &WiFiDriver::udp_status)) {
+            
+            uint16_t len = mavlink_msg_to_send_buffer(buf, &WiFiDriver::udp_msg);
+            bridge.get_queue_manager().enqueue_packet(buf, len, Types::DataSource::WIFI_UDP);
+        }
+    }
     
     pbuf_free(p);
 }

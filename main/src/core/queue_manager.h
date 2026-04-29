@@ -37,7 +37,7 @@ private:
     QueueHandle_t packet_queue_;
     QueueHandle_t event_queue_;
 
-    static const size_t PACKET_QUEUE_SIZE = 20;
+    static const size_t PACKET_QUEUE_SIZE = 100;
     static const size_t EVENT_QUEUE_SIZE = 10;
     static const size_t MAX_MESSAGE_SIZE = 2048;  // 2KB
 
