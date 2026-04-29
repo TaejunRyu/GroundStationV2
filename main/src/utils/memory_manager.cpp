@@ -82,13 +82,5 @@ size_t MemoryManager::get_total_psram() {
     return info.total_allocated_bytes + info.total_free_bytes;
 }
 
-// 호환성을 위한 기존 함수들
-void* init_psram_buffer(size_t size) {
-    return MemoryManager::allocate_psram(size);
-}
-
-void free_psram_buffer(void* buffer) {
-    MemoryManager::deallocate_psram(buffer);
-}
 
 } // namespace Utils

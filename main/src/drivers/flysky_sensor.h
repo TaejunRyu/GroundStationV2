@@ -54,5 +54,5 @@ private:
     static const int UART_BUF_SIZE = 256;
     static const int BAUD_RATE = 115200;
 };
-
+ 
 } // namespace Drivers

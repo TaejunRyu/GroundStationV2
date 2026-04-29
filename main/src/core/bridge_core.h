@@ -9,7 +9,7 @@
 #include "bridge_types.h"
 
 // 1. 클래스 내부가 아닌 여기서 먼저 선언하세요.
-// 1. 서비스들이 속한 네임스페이스별로 전방 선언을 정확히 배치합니다.
+// 2. 서비스들이 속한 네임스페이스별로 전방 선언을 정확히 배치합니다.
 namespace Services {
     class MavlinkService;
     class TimerService;
@@ -60,7 +60,7 @@ public:
         return *instance;
     }
 
-    // 서비스 및 드라이버 접근자
+    // 서비스 및 드라이버 접근자 (참조자로만 넘뎌준다)
     Drivers::WiFiDriver& get_wifi_driver() { return *wifi_driver_; }
     Drivers::SerialJtagDriver& get_serial_jtag_driver() { return *serial_jtag_driver_; }
     Drivers::LedStripDriver& get_led_strip_driver() { return *strip_driver_; }
@@ -71,13 +71,13 @@ public:
     void check_connection_timeout();
 
     int8_t  get_rssi() const;
-    void    set_rssi(int8_t rssi) { rssi_ = rssi; }
+    void    set_rssi(int8_t rssi) { rssi_ = (uint8_t)((rssi + 121) * 2); }
     int8_t  get_noise_floor() const;
-    void    set_noise_floor(int8_t noise_floor) { noise_floor_ = noise_floor; }
+    void    set_noise_floor(int8_t noise_floor) { noise_floor_ = (uint8_t)((noise_floor + 121) * 2); }
     int8_t  get_remote_rssi() const;
-    void    set_remote_rssi(int8_t rssi) { remote_rssi_ = rssi; }
+    void    set_remote_rssi(int8_t rssi) { remote_rssi_ = (uint8_t)((rssi + 121) * 2); }
     int8_t  get_remote_noise_floor() const;
-    void    set_remote_noise_floor(int8_t noise_floor) { remote_noise_floor_ = noise_floor; }
+    void    set_remote_noise_floor(int8_t noise_floor) { remote_noise_floor_ = (uint8_t)((noise_floor + 121) * 2); }
 
 private: 
 
@@ -98,11 +98,9 @@ private:
     TaskHandle_t process_task_handle_;
     TaskHandle_t serial_jtag_rx_task_handle_;
     
-    
         // 드론과 브리지의 RSSI 및 노이즈 플로어 정보
     std::atomic<int8_t>  rssi_{0}, noise_floor_{0};
     std::atomic<int8_t>  remote_rssi_{0}, remote_noise_floor_{0};
-    
     
     static const char* TAG;
 };

@@ -22,6 +22,8 @@
  *    6. 함수의 예로서 usb_serial_jtag_driver_install()와 usb_serial_jtag_driver_write() 등이 있음
  *    7. JTAG 프로토콜에 맞게 데이터를 포맷팅하여 송수신할 수 있도록 구현    
 */
+
+
 namespace Drivers {
 
 const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
@@ -166,8 +168,6 @@ esp_err_t SerialJtagDriver::start(void){
         return ESP_OK;
     }
   
-
-
     running_ = true;
     ESP_LOGI(TAG, "Serial JTAG started in callback mode");
     return ESP_OK;        

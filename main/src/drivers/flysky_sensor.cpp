@@ -151,7 +151,7 @@ esp_err_t FlyskySensor::parse_ibus_packet(const uint8_t* packet, size_t len) {
 }
 
 void FlyskySensor::flysky_rx_task_static(void* arg) {
-    FlyskySensor* sensor = reinterpret_cast<FlyskySensor*>(arg);
+    FlyskySensor* sensor = static_cast<FlyskySensor*>(arg);
 
     uint8_t temp_buf[128];
     uint8_t packet[IBUS_PACKET_SIZE];

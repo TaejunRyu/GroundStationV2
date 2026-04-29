@@ -43,8 +43,6 @@ private:
     static const char* TAG;
 };
 
-// 호환성을 위한 기존 함수들
-extern void* init_psram_buffer(size_t size);
-extern void free_psram_buffer(void* buffer);
+
 
 } // namespace Utils

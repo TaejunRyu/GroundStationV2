@@ -19,10 +19,17 @@ namespace Core {
     class QueueManager;
 }
 
+
+
 namespace Drivers {
 
 class SerialJtagDriver {
+
 public:
+    // 복사및 할당 금지. ( 싱글톤 )
+    SerialJtagDriver(const SerialJtagDriver&) = delete;
+    SerialJtagDriver& operator=(const SerialJtagDriver&) = delete;
+
     SerialJtagDriver();
     ~SerialJtagDriver();
 

@@ -72,9 +72,18 @@ esp_err_t QueueManager::enqueue_packet(const uint8_t* data, size_t len, Types::D
     memcpy(message->data, data, len);
 
     if (xQueueSend(packet_queue_, &message, pdMS_TO_TICKS(100)) != pdTRUE) {
-        ESP_LOGW(TAG, "Packet queue full, dropping message");
-        free_message(message);
-        return ESP_ERR_TIMEOUT;
+        //ESP_LOGW(TAG, "Packet queue full, dropping message");
+        //free_message(message);
+        //return ESP_ERR_TIMEOUT;
+        { // 하나빼내고 하나 넣음   현상유지는 됨...
+            Types::QueueMessage* old_msg;
+            // 가장 오래된 것 하나를 꺼내서 제거
+            if (xQueueReceive(packet_queue_, &old_msg, 0) == pdTRUE) {
+                free_message(old_msg); 
+            }    
+            // 다시 넣기 시도
+            xQueueSend(packet_queue_, &message, 0);
+        }
     }
 
     ESP_LOGD(TAG, "Packet enqueued: source=%d, len=%d", static_cast<int>(source), len);

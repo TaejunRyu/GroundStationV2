@@ -327,25 +327,30 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
     Types::DataSource source = msg->source;
 
     // MAVLink 파싱 및 콜백 호출
-    static mavlink_message_t mav_msg;
-    static mavlink_status_t status;
-    bool should_forward = true; // 중계 여부 결정 플래그
+    static mavlink_message_t serial_msg;
+    static mavlink_status_t serial_status;
 
+    static mavlink_message_t udp_msg;
+    static mavlink_status_t udp_status;
+    
+    static mavlink_message_t espnow_msg;
+    static mavlink_status_t esp_now_status;
 
-    for (size_t ii = 0; ii < len; ii++) {
-        if (mavlink_parse_char(MAVLINK_COMM_2, data[ii], &mav_msg, &status)) {
-            if(source == Types::DataSource::WIFI_ESPNOW){
-                if(mav_msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS){
-                    rssi_ = mavlink_msg_radio_status_get_rssi(&mav_msg);
-                    noise_floor_ = mavlink_msg_radio_status_get_noise(&mav_msg);      
-                    // 가로챈 메시지는 원본을 중계하지 않음
-                    should_forward = false;           
-                }
-            }            
+    switch(source){
+        case Types::DataSource::UART_SERIAL:{
+            break;
+        }
+        case Types::DataSource::WIFI_UDP:{
+            break;
+        }
+        case Types::DataSource::WIFI_ESPNOW:{
+            break;
+        }
+        case Types::DataSource::INTERNAL:{
+            break;
         }
     }
-    // 2. 중계 로직 (분석 결과 중계가 필요할 때만 실행)
-    if (!should_forward) return; // 가로챈 메시지라면 여기서 끝냄
+
 
     if (source == Types::DataSource::UART_SERIAL || source == Types::DataSource::WIFI_UDP) {
         if(wifi_driver_->is_connected(Types::DataSource::WIFI_ESPNOW)){
@@ -362,6 +367,25 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
 
         esp_err_t ret;
 
+        if(source == Types::DataSource::WIFI_ESPNOW){
+            bool should_forward = true; // 중계 여부 결정 플래그
+
+            for (size_t ii = 0; ii < len; ii++) {
+                if (mavlink_parse_char(MAVLINK_COMM_2, data[ii], &mav_msg, &status)) {
+                    if(source == Types::DataSource::WIFI_ESPNOW){
+                        if(mav_msg.msgid == MAVLINK_MSG_ID_RADIO_STATUS){
+                            set_rssi(mavlink_msg_radio_status_get_rssi(&mav_msg));
+                            set_noise_floor(mavlink_msg_radio_status_get_noise(&mav_msg));
+                            // 가로챈 메시지는 원본을 중계하지 않음
+                            should_forward = false;           
+                        }
+                    }            
+                }
+            }
+            // 2. 중계 로직 (분석 결과 중계가 필요할 때만 실행)
+            if (!should_forward) return; // 가로챈 메시지라면 여기서 끝냄    
+        }
+
         if (serial_jtag_driver_->is_connected()){
             ret = serial_jtag_driver_->send_data(data, len);
             if (ret != ESP_OK) {
@@ -372,7 +396,7 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
         }
 
         if(wifi_driver_->is_connected(Types::DataSource::WIFI_UDP)){
-            ret = wifi_driver_->send_udp(data, len); // UDP로도 데이터 전달 (옵션)
+            ret = wifi_driver_->send_udp(data, len); // UDP로도 데이터 전달 
             if(ret != ESP_OK) {
                 ESP_LOGW(TAG, "Failed to send data via UDP");
             } else {
@@ -456,12 +480,7 @@ void BridgeCore::on_timer_tick() {
                 uint8_t noise_floor = get_noise_floor();
                 uint8_t remote_noise_floor = get_remote_noise_floor();
 
-                rssi = (uint8_t)((rssi + 121) * 2);
-                remote_rssi = (uint8_t)((remote_rssi + 121) * 2);
                 remote_rssi = wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? remote_rssi : -100;
-
-                noise_floor = (uint8_t)((noise_floor + 121) * 2);
-                remote_noise_floor = (uint8_t)((remote_noise_floor + 121) * 2);
                 remote_noise_floor = wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? remote_noise_floor : -105;
 
                 mavlink_msg_radio_status_pack_chan(
@@ -472,7 +491,7 @@ void BridgeCore::on_timer_tick() {
                                         noise_floor, 
                                         remote_noise_floor,
                                         0, 
-                                        0  //STATS::bridge_status.bridge.stats.fixed_errors
+                                        0 
                                     );
                 len = mavlink_msg_to_send_buffer(buf, &msg);
                 queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
@@ -481,7 +500,6 @@ void BridgeCore::on_timer_tick() {
         case 3:
             break;
         case 4:
-            // HEARTBEAT 메시지 처리
             break;
         case 5:{ // 100ms * 10 중 5번째 슬롯 (1Hz 전송)
                 // 1. 배터리 전압 읽기 (예: ADC를 통해 읽은 값, 없으면 고정값으로 테스트)
@@ -507,24 +525,19 @@ void BridgeCore::on_timer_tick() {
                                         MAV_AUTOPILOT_INVALID,  // 실질적인 배행체는 아니다.MAV_STATE_CRITICAL
                                         0, 
                                         0, 
-                                        wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? MAV_STATE_ACTIVE:MAV_STATE_CRITICAL); 
+                                        MAV_STATE_ACTIVE); 
                 len = mavlink_msg_to_send_buffer(buf, &msg);
                 queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
                 break;
             }
             
         case 8:
-            // BATTERY_STATUS 메시지 처리
             break;
         case 9:
             break;
         default:
             break;
     }
-
-    //if (get_wifi_driver().is_connected(Types::DataSource::WIFI_UDP) || get_wifi_driver().is_connected(Types::DataSource::UART_SERIAL)){
-        
-    //}
 
     if (tick_count >= 9) 
         tick_count = 0;

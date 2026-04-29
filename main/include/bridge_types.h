@@ -141,13 +141,8 @@ struct MavlinkSystem {
 
 // 통신 통계
 struct CommStats {
-
     uint32_t tx_count;
     uint32_t rx_count;
-    int64_t last_send_time;
-    int64_t last_receive_time;
-    int64_t connected_time;
-    bool is_connected;
     int8_t rssi;
     int8_t noise_floor;
 };
@@ -159,12 +154,12 @@ namespace Config {
     inline constexpr uint8_t    DRONE_COMP_ID  = CONFIG_GS_MAV_DRONE_COMPID; // MAV_COMPONENT_ID_DRONE
 
     inline constexpr uint8_t    ESPNOW_CHANNEL = CONFIG_GS_ESPNOW_CHANNEL;
-    inline constexpr uint16_t   ESP_NOW_MAX_LEN = 290;
-    inline constexpr uint16_t   UPDOWNLINK_QUEUE_SIZE = 40;
+    //inline constexpr uint16_t   ESP_NOW_MAX_LEN = 290;
+    //inline constexpr uint16_t   UPDOWNLINK_QUEUE_SIZE = 40;
 
     inline constexpr uint16_t   UDP_PORT = 14550;
     inline constexpr size_t     UDP_RX_BUFFER_SIZE = 4096;
-    inline constexpr size_t     MAX_MESSAGE_SIZE = 2048;
+    //inline constexpr size_t     MAX_MESSAGE_SIZE = 2048;
 }
 
 } // namespace Types

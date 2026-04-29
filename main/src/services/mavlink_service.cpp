@@ -1,5 +1,8 @@
 #include "mavlink_service.h"
+
 #include <cstring>
+#include "bridge_core.h"
+#include "queue_manager.h"
 
 namespace Services {
 
@@ -21,7 +24,7 @@ esp_err_t MavlinkService::initialize() {
     return ESP_OK;
 }
 
-void MavlinkService::process_packet(const uint8_t* data, size_t len) {
+void MavlinkService:: process_packet(const uint8_t* data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         if (mavlink_parse_char(MAVLINK_COMM_2, data[i], &mavlink_msg_, &mavlink_status_)) {
             // 메시지 처리
@@ -47,19 +50,19 @@ void MavlinkService::process_packet(const uint8_t* data, size_t len) {
 }
 
 esp_err_t MavlinkService::send_status_text(const char* text, uint8_t severity) {
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+    
     mavlink_msg_statustext_pack_chan(
         Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1,
         &mavlink_msg_, severity, text, 0, 0
     );
-
     uint16_t len = mavlink_msg_to_send_buffer(temp_buffer_, &mavlink_msg_);
-
-    // TODO: WiFiDriver를 통해 전송
-    ESP_LOGI(TAG, "Status text sent: %s", text);
+    bridge.get_queue_manager().enqueue_packet(temp_buffer_,len,Types::DataSource::INTERNAL);
     return ESP_OK;
 }
 
 esp_err_t MavlinkService::send_heartbeat() {
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     mavlink_msg_heartbeat_pack_chan(
         Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1,
         &mavlink_msg_,
@@ -69,14 +72,14 @@ esp_err_t MavlinkService::send_heartbeat() {
     );
 
     uint16_t len = mavlink_msg_to_send_buffer(temp_buffer_, &mavlink_msg_);
-
-    // TODO: WiFiDriver를 통해 전송
-    ESP_LOGD(TAG, "Heartbeat sent");
+    bridge.get_queue_manager().enqueue_packet(temp_buffer_,len,Types::DataSource::INTERNAL);
     return ESP_OK;
 }
 
 esp_err_t MavlinkService::send_radio_status(const Types::CommStats& drone_stats,
                                            const Types::CommStats& bridge_stats) {
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+
     mavlink_msg_radio_status_pack_chan(
         Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1,
         &mavlink_msg_,
@@ -90,9 +93,7 @@ esp_err_t MavlinkService::send_radio_status(const Types::CommStats& drone_stats,
     );
 
     uint16_t len = mavlink_msg_to_send_buffer(temp_buffer_, &mavlink_msg_);
-
-    // TODO: WiFiDriver를 통해 전송
-    ESP_LOGD(TAG, "Radio status sent");
+    bridge.get_queue_manager().enqueue_packet(temp_buffer_,len,Types::DataSource::INTERNAL);
     return ESP_OK;
 }
 
