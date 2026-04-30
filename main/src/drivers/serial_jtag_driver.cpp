@@ -240,5 +240,17 @@ void SerialJtagDriver::rx_task(void* pvParameters) {
     }
 }
 
+void SerialJtagDriver::start_task(){
+   // Serial JTAG 수신 처리 태스크 생성 (우선순위 6, 코어 0 고정)
+    xTaskCreatePinnedToCore( 
+        rx_task, 
+        "rx_task",      
+        4096,
+        this, 
+        6 ,
+        &serial_jtag_rx_task_handle_,
+        0);
+}
+
 
 } // namespace Drivers

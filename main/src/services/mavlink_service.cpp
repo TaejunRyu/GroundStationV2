@@ -3,6 +3,7 @@
 #include <cstring>
 #include "bridge_core.h"
 #include "queue_manager.h"
+#include "wifi_driver.h"
 
 namespace Services {
 
@@ -76,18 +77,34 @@ esp_err_t MavlinkService::send_heartbeat() {
     return ESP_OK;
 }
 
-esp_err_t MavlinkService::send_radio_status(const Types::CommStats& drone_stats,
-                                           const Types::CommStats& bridge_stats) {
+esp_err_t MavlinkService::send_power_status(){
     Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
+    // 100ms * 10 중 5번째 슬롯 (1Hz 전송)
+    // 1. 배터리 전압 읽기 (예: ADC를 통해 읽은 값, 없으면 고정값으로 테스트)
+    // 2. 3.7V 배터리라면 실제 측정값(mV 단위)을 넣으세요.
+    uint16_t battery_voltage_mv = 3700; 
+    // uint16_t battery_mv = get_battery_voltage_mv();  --> ryu_adc.cpp     
+    mavlink_msg_power_status_pack_chan( Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1,&mavlink_msg_, 
+        battery_voltage_mv, 
+        0,          // Vservo
+        0           // flags
+        );
+    uint16_t len = mavlink_msg_to_send_buffer(temp_buffer_, &mavlink_msg_);
+    bridge.get_queue_manager().enqueue_packet(temp_buffer_,len,Types::DataSource::INTERNAL);
+    return ESP_OK;
+}
 
+
+esp_err_t MavlinkService::send_radio_status() {
+    Core::BridgeCore& bridge = Core::BridgeCore::get_instance();
     mavlink_msg_radio_status_pack_chan(
         Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1,
         &mavlink_msg_,
-        bridge_stats.rssi,
-        drone_stats.rssi,
-        0,  // txbuf
-        bridge_stats.noise_floor,
-        drone_stats.noise_floor,
+        bridge.get_rssi(),
+        bridge.get_wifi_driver().is_connected(Types::DataSource::WIFI_ESPNOW) ? bridge.get_remote_rssi() : -100,
+        bridge.get_queue_manager().get_queue_usage(),  // txbuf
+        bridge.get_noise_floor(),
+        bridge.get_wifi_driver().is_connected(Types::DataSource::WIFI_ESPNOW) ? bridge.get_remote_noise_floor():-105,
         0,  // rxerrors
         0   // fixed
     );

@@ -17,7 +17,8 @@ public:
     // MAVLink 메시지 생성
     esp_err_t send_status_text(const char* text, uint8_t severity);
     esp_err_t send_heartbeat();
-    esp_err_t send_radio_status(const Types::CommStats& drone_stats, const Types::CommStats& bridge_stats);
+    esp_err_t send_power_status();
+    esp_err_t send_radio_status();
 
 private:
     static const char* TAG;

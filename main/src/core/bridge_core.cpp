@@ -14,6 +14,7 @@
 #include "memory_manager.h"
 #include "led_strip_driver.h"
 #include "bridge_types.h"
+#include "adc_driver.h"
 
 namespace Core {
 
@@ -29,7 +30,22 @@ BridgeCore::~BridgeCore() {
     ESP_LOGI(TAG, "BridgeCore destroyed");
 }
 
-void BridgeCore::deinitialize() {}
+/**
+ * @brief 
+ *      1. 이 함수는 실행되지 못한다. ( power off )
+ */
+void BridgeCore::deinitialize() {
+    if (adc_driver_) adc_driver_->deinitialize();
+    if (config_manager_) config_manager_->deinitialize();
+    if (memory_manager_) memory_manager_->deinitialize();
+    //if (mavlink_service_) mavlink_service_->deinitialize();
+    //if (timer_service_) timer_service_->deinitialize();
+    if (adc_driver_) adc_driver_->deinitialize();
+    if (strip_driver_) strip_driver_->deinitialize();
+    //if (wifi_driver_) wifi_driver_->deinitialize();
+    if (serial_jtag_driver_) serial_jtag_driver_->deinitialize();
+    if (queue_manager_) queue_manager_->deinitialize();
+}
 
 esp_err_t BridgeCore::initialize() {
     esp_err_t ret = ESP_OK;
@@ -59,14 +75,17 @@ esp_err_t BridgeCore::initialize() {
 
     // 1. 서비스 객체 생성 (unique_ptr 할당)
     
-    config_manager_ = std::make_unique<Utils::ConfigManager>();
-    memory_manager_ = std::make_unique<Utils::MemoryManager>();
-    mavlink_service_ = std::make_unique<Services::MavlinkService>();
-    timer_service_ = std::make_unique<Services::TimerService>();
-    wifi_driver_ = std::make_unique<Drivers::WiFiDriver>();
+    config_manager_     = std::make_unique<Utils::ConfigManager>();
+    memory_manager_     = std::make_unique<Utils::MemoryManager>();
+    queue_manager_      = std::make_unique<Core::QueueManager>();
+
+    mavlink_service_    = std::make_unique<Services::MavlinkService>();
+    timer_service_      = std::make_unique<Services::TimerService>();
+
+    wifi_driver_        = std::make_unique<Drivers::WiFiDriver>();
     serial_jtag_driver_ = std::make_unique<Drivers::SerialJtagDriver>();
-    strip_driver_ = std::make_unique<Drivers::LedStripDriver>();
-    queue_manager_ = std::make_unique<Core::QueueManager>();
+    strip_driver_       = std::make_unique<Drivers::LedStripDriver>();
+    adc_driver_         = std::make_unique<Drivers::AdcDriver>();  
 
 
     ret = config_manager_->initialize();
@@ -76,6 +95,12 @@ esp_err_t BridgeCore::initialize() {
     }
     config_manager_->set_drone_mac(config_manager_->get_drone_mac().data()); // ConfigManager에서 드론 MAC 주소 설정
     //config_manager_->set_bridge_mac(config_manager_->get_bridge_mac().data()); // ConfigManager에서 브리지 MAC 주소 설정
+
+    ret = adc_driver_->initialize();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "AdcDriver initialization failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     ret = strip_driver_->initialize();
     if (ret != ESP_OK) {
@@ -196,11 +221,11 @@ esp_err_t BridgeCore::start() {
         return ret;
     }
    
-    // 데이터 처리 태스크 생성 (우선순위 5, 코어 1 고정)
-    xTaskCreatePinnedToCore(BridgeCore::process_task,           "process_task", 4096,this,                      5,&process_task_handle_,1);
-    // Serial JTAG 수신 처리 태스크 생성 (우선순위 6, 코어 0 고정)
-    xTaskCreatePinnedToCore(Drivers::SerialJtagDriver::rx_task, "rx_task",      4096,serial_jtag_driver_.get(), 6,&serial_jtag_rx_task_handle_,0);
+    // task 실행
+    this->start_task();
+    serial_jtag_driver_->start_task();
 
+    // callback 등록
     wifi_driver_->register_espnow_callbacks(); // ESP-NOW 콜백 등록
     wifi_driver_->enable_udp_recv();
     serial_jtag_driver_->register_select_callback(); // Serial JTAG select 콜백 등록
@@ -223,6 +248,20 @@ void BridgeCore::stop() {
         ESP_LOGI(TAG, "BridgeCore stopped");
     }
 }
+
+
+void BridgeCore::start_task(){
+ // 데이터 처리 태스크 생성 (우선순위 5, 코어 1 고정)
+    xTaskCreatePinnedToCore(process_task,           
+            "process_task", 
+            4096,
+            this,                      
+            5,
+            &process_task_handle_,
+            1
+    );
+}
+
 
 void BridgeCore::on_wifi_connected() {
     ESP_LOGI(TAG, "Wi-Fi connected event received");
@@ -313,11 +352,14 @@ void BridgeCore::process_task(void *pvParameters)
         // 로그 대신 상태 체크를 수행합니다.
         }
 
+        // 1 second 단위로 체크하라.
+        static uint64_t last_check_timestamp = esp_timer_get_time(); 
+        if (esp_timer_get_time() - last_check_timestamp >= 1'000'000){
         // 데이터 유무와 상관없이 주기적으로 연결 상태 체크
-       core->check_connection_timeout();
-
+            core->check_connection_timeout();
+            last_check_timestamp = esp_timer_get_time();
+        }
     }
-
 }
 
 void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
@@ -357,9 +399,7 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
                             set_noise_floor(mavlink_msg_radio_status_get_noise(&mav_msg));
                             // 가로챈 메시지는 원본을 중계하지 않음
                             should_forward = false;           
-                        } else{
-                             
-                        }
+                        } 
                     }            
                 }
             }
@@ -377,7 +417,7 @@ void BridgeCore::handle_incoming_data(Types::QueueMessage *msg)
         }
 
         if(wifi_driver_->is_connected(Types::DataSource::WIFI_UDP)){
-            ret = wifi_driver_->send_udp(data, len); // UDP로도 데이터 전달 
+            ret = wifi_driver_->send_udp(data, len); // UDP로 데이터 전달 
             if(ret != ESP_OK) {
                 ESP_LOGW(TAG, "Failed to send data via UDP");
             } else {
@@ -442,81 +482,19 @@ void BridgeCore::check_connection_timeout() {
  */
 void BridgeCore::on_timer_tick() {
 
-    static uint8_t buf[1024]={};
-    static uint8_t len = 0;  
-    static mavlink_message_t msg;
     static uint32_t tick_count = 0;
 
-    static Drivers::WiFiDriver& wifi_driver = get_wifi_driver(); 
-    static Core::QueueManager& queue_manager = get_queue_manager();
+    static Services::MavlinkService& mavlink_serverce = get_mavlink_service();
     
     switch (tick_count) { 
-        case 0:            
-            break;
-        case 1:
-            break;
-        case 2:{
-                uint8_t rssi = get_rssi();
-                uint8_t remote_rssi = get_remote_rssi();
-                uint8_t noise_floor = get_noise_floor();
-                uint8_t remote_noise_floor = get_remote_noise_floor();
-
-                remote_rssi = wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? remote_rssi : -100;
-                remote_noise_floor = wifi_driver.is_connected(Types::DataSource::WIFI_ESPNOW)? remote_noise_floor : -105;
-
-                mavlink_msg_radio_status_pack_chan(
-                                        Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1, &msg,                                    
-                                        rssi,  
-                                        remote_rssi,
-                                        queue_manager.get_queue_usage(),
-                                        noise_floor, 
-                                        remote_noise_floor,
-                                        0, 
-                                        0 
-                                    );
-                len = mavlink_msg_to_send_buffer(buf, &msg);
-                queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
-                break;
-            }
-        case 3:
-            break;
-        case 4:
-            break;
-        case 5:{ // 100ms * 10 중 5번째 슬롯 (1Hz 전송)
-                // 1. 배터리 전압 읽기 (예: ADC를 통해 읽은 값, 없으면 고정값으로 테스트)
-                // 2. 3.7V 배터리라면 실제 측정값(mV 단위)을 넣으세요.
-                uint16_t battery_voltage_mv = 3700; 
-                // uint16_t battery_mv = get_battery_voltage_mv();  --> ryu_adc.cpp     
-                mavlink_msg_power_status_pack( Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, &msg, 
-                    battery_voltage_mv, 
-                    0,          // Vservo
-                    0           // flags
-                    );
-                len = mavlink_msg_to_send_buffer(buf, &msg);
-                queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
-            }
-        break;
+        case 2:
+            mavlink_serverce.send_radio_status();
             break;
         case 6:
-            break;
-        case 7:{
-                mavlink_msg_heartbeat_pack_chan(
-                                        Types::Config::SYSTEM_ID, Types::Config::COMPONENT_ID, MAVLINK_COMM_1, &msg, 
-                                        MAV_TYPE_ONBOARD_CONTROLLER,
-                                        MAV_AUTOPILOT_INVALID,  // 실질적인 배행체는 아니다.MAV_STATE_CRITICAL
-                                        0, 
-                                        0, 
-                                        MAV_STATE_ACTIVE); 
-                len = mavlink_msg_to_send_buffer(buf, &msg);
-                queue_manager.enqueue_packet(buf,len,Types::DataSource::INTERNAL);
-                break;
-            }
-            
-        case 8:
+            mavlink_serverce.send_power_status(); 
             break;
         case 9:
-            break;
-        default:
+            mavlink_serverce.send_heartbeat();
             break;
     }
 

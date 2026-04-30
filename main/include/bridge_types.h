@@ -1,12 +1,13 @@
 #pragma once
 
 #include <stdint.h>
+#include <atomic>
 #include <esp_err.h>
 #include <freertos/FreeRTOS.h>
-#include "esp_wifi_types.h"
+#include <esp_wifi_types.h>
 #include "sdkconfig.h"
     
-// 공통 타입 정의 (기존 ryu_types.h와 ryu_config.h 통합)
+
 namespace Types {
 
 // 시스템 상태
@@ -21,27 +22,13 @@ enum class SystemState {
 
 // 데이터 소스
 enum class DataSource {
-    WIFI_UDP,
-    UART_SERIAL,
-    WIFI_ESPNOW,
     INTERNAL,
+    UART_SERIAL,
+    WIFI_UDP,
+    WIFI_ESPNOW,
     UART_FLYSKY
 };
 
-// // 패킷 타입 (기존 packet_type_t 확장)
-// enum class PacketType {
-//     ON_ESP_NOW_RECV = 0x00,
-//     ON_UART_RECV    = 0x01,
-//     ON_UDP_RECV     = 0x02,
-//     ON_BRIDGE_MAKE  = 0x03,
-//     ON_RC_OVERRIDE  = 0x04,
-//     MAVLINK_HEARTBEAT,
-//     MAVLINK_COMMAND,
-//     MAVLINK_STATUS,
-//     RC_CHANNELS,
-//     TELEMETRY,
-//     RAW_DATA
-// };
 
 // 이벤트 타입 (기존 bridge_event_type 확장)
 enum class BridgeEvent {
@@ -76,12 +63,7 @@ enum class BridgeEvent {
     SYSTEM_ERROR
 };
 
-// ESP-NOW 이벤트 데이터
-struct EspNowEventData {
-    uint8_t mac[6];
-    int8_t  rssi;
-    uint8_t noise_floor;
-} __attribute__((packed));
+
 
 // RC 전용 정적 구조체
 struct RcStaticPacket {
@@ -108,7 +90,6 @@ struct EventData {
             size_t length;
             const uint8_t* data;
         } packet_data;
-        EspNowEventData espnow_data;
         esp_err_t error_code;
     } data;
 };
@@ -140,11 +121,17 @@ struct MavlinkSystem {
 };
 
 // 통신 통계
-struct CommStats {
+struct CommStats { 
+    // 전송관리
+    uint32_t tx_length;
+    uint32_t rx_length;
     uint32_t tx_count;
     uint32_t rx_count;
-    int8_t rssi;
-    int8_t noise_floor;
+    // 드론과 브리지 
+    std::atomic<int8_t>  rssi;
+    std::atomic<int8_t>  noise_floor;
+    std::atomic<int8_t>  remote_rssi;
+    std::atomic<int8_t>  remote_noise_floor;
 };
 
 // 시스템 설정 상수

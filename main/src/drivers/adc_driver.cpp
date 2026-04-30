@@ -1,7 +1,9 @@
 #include "adc_driver.h"
+#include "esp_adc/adc_cali_scheme.h" // 보정 스킴 헤더 필수
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h" // 보정 스킴 헤더 필수
+
+
 #include <esp_log.h>
 
 namespace Drivers {
@@ -17,12 +19,6 @@ AdcDriver::AdcDriver()
 AdcDriver::~AdcDriver() {
     deinitialize();
 }
-#include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h" // 보정 스킴 헤더 필수
-#include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
 
 esp_err_t AdcDriver::initialize() {
     if (initialized_) return ESP_OK;
@@ -45,7 +41,9 @@ esp_err_t AdcDriver::initialize() {
     // 3. Calibration 설정 (Line Fitting -> Curve Fitting으로 교체)
     adc_cali_curve_fitting_config_t cali_config = {
         .unit_id = ADC_UNIT_1,
-        .chan = ADC_CHANNEL_0, // Curve Fitting은 채널 지정이 필요할 수 있습니다
+        .chan = ADC_CHANNEL_0,              // GPIO 1
+        //전압 범위: 코드에서 ADC_ATTEN_DB_12 설정을 사용 중이므로, 
+        //해당 핀에는 최대 약 2.45V ~ 3.1V 사이의 전압까지만 입력 가능합니다 (정확한 권장 범위는 공식 문서 참고).
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };

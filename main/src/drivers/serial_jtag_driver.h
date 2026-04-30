@@ -61,7 +61,14 @@ public:
 
     static void set_queue_manager(Core::QueueManager* qm) { queue_mgr_ = qm; }
     static void rx_task(void *pvParameters);
+
+    // tx_task 실행..
+    void start_task();
+    TaskHandle_t& get_task_handle() { return serial_jtag_rx_task_handle_; }
+
 private:
+    TaskHandle_t serial_jtag_rx_task_handle_;
+
     size_t buffer_size_;
 
     bool initialized_;

@@ -19,6 +19,7 @@ namespace Drivers {
     class WiFiDriver;
     class SerialJtagDriver;
     class LedStripDriver;
+    class AdcDriver;
 }
 
 namespace Core {
@@ -47,6 +48,8 @@ public:
     esp_err_t start();
     void stop();
 
+    void start_task();
+
     // 이벤트 처리 인터페이스
     void on_wifi_connected();
     void on_wifi_disconnected();
@@ -64,8 +67,11 @@ public:
     Drivers::WiFiDriver& get_wifi_driver() { return *wifi_driver_; }
     Drivers::SerialJtagDriver& get_serial_jtag_driver() { return *serial_jtag_driver_; }
     Drivers::LedStripDriver& get_led_strip_driver() { return *strip_driver_; }
+    Drivers::AdcDriver& get_adc_driver(){return *adc_driver_;}
     Core::QueueManager& get_queue_manager() { return *queue_manager_; }
+    Services::MavlinkService& get_mavlink_service(){return *mavlink_service_;}
 
+    TaskHandle_t& get_task_handle() { return process_task_handle_; }
     static void process_task(void* pvParameters);
     void handle_incoming_data(Types::QueueMessage* msg);
     void check_connection_timeout();
@@ -79,6 +85,7 @@ public:
     int8_t  get_remote_noise_floor() const;
     void    set_remote_noise_floor(int8_t noise_floor) { remote_noise_floor_ = (uint8_t)((noise_floor + 121) * 2); }
 
+
 private: 
 
     // 서비스 객체들 (unique_ptr로 관리)
@@ -88,6 +95,7 @@ private:
     std::unique_ptr<Services::MavlinkService> mavlink_service_;
     std::unique_ptr<Services::TimerService> timer_service_;
 
+    std::unique_ptr<Drivers::AdcDriver> adc_driver_;
     std::unique_ptr<Drivers::LedStripDriver> strip_driver_;    
     std::unique_ptr<Drivers::WiFiDriver> wifi_driver_;
     std::unique_ptr<Drivers::SerialJtagDriver> serial_jtag_driver_;
@@ -95,8 +103,8 @@ private:
     std::unique_ptr<Core::QueueManager> queue_manager_;
 
     Types::SystemState system_state_;
+
     TaskHandle_t process_task_handle_;
-    TaskHandle_t serial_jtag_rx_task_handle_;
     
         // 드론과 브리지의 RSSI 및 노이즈 플로어 정보
     std::atomic<int8_t>  rssi_{0}, noise_floor_{0};

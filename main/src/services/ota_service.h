@@ -30,9 +30,9 @@ private:
     bool initialized_;
 
     // 일시 중지할 태스크 핸들들
-    TaskHandle_t uart_task_handle_;
-    TaskHandle_t espnow_task_handle_;
-    TaskHandle_t rc_task_handle_;
+    TaskHandle_t *serial_jtag_driver_handle_;
+    TaskHandle_t *core_process_task_handle_;
+    TaskHandle_t *rc_task_handle_;
 
     static const char* TAG;
     static const char* DEFAULT_OTA_URL;

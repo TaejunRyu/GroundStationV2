@@ -10,15 +10,18 @@
 // 새로운 아키텍처 헤더들
 #include "core/bridge_core.h"
 #include "core/queue_manager.h"
+
 #include "services/mavlink_service.h"
 #include "services/timer_service.h"
 #include "services/ota_service.h"
+
 #include "drivers/wifi_driver.h"
 #include "drivers/led_driver.h"
 #include "drivers/led_strip_driver.h"
 #include "drivers/uart_driver.h"
 #include "drivers/flysky_sensor.h"
 #include "drivers/adc_driver.h"
+
 #include "utils/config_manager.h"
 #include "utils/memory_manager.h"
 
@@ -75,14 +78,14 @@ void app_main(void) {
 
     // 3. 로그 레벨 설정
     esp_log_level_set("*", ESP_LOG_NONE);
+    
     esp_log_level_set("MAIN", ESP_LOG_INFO);
-    esp_log_level_set("MAVLINK", ESP_LOG_INFO);
-    esp_log_level_set("TIMER", ESP_LOG_INFO);
-    esp_log_level_set("UART", ESP_LOG_INFO);
+    esp_log_level_set("MAVLINK_SERVICE", ESP_LOG_INFO);
+    esp_log_level_set("TIMER_SERVICE", ESP_LOG_INFO);
     esp_log_level_set("FLYSKY", ESP_LOG_INFO);
     esp_log_level_set("ADC", ESP_LOG_INFO);
     esp_log_level_set("LED_STRIP", ESP_LOG_INFO);
-
+    esp_log_level_set("QUEUE_MANAGER", ESP_LOG_INFO);
     esp_log_level_set("WIFI_DRIVER", ESP_LOG_VERBOSE);
     esp_log_level_set("SERIAL_JTAG", ESP_LOG_VERBOSE);
     esp_log_level_set("BRIDGE_CORE", ESP_LOG_VERBOSE);

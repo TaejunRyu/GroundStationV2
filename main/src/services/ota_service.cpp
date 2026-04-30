@@ -3,6 +3,8 @@
 #include <esp_ota_ops.h>
 #include <esp_https_ota.h>
 #include <cstring>
+#include "bridge_core.h"
+#include "serial_jtag_driver.h"
 
 namespace Services {
 
@@ -11,9 +13,11 @@ const char* OtaService::DEFAULT_OTA_URL = "http://192.168.4.2:8000/firmware.bin"
 
 OtaService::OtaService()
     : ota_task_handle_(nullptr), ota_running_(false), initialized_(false),
-      uart_task_handle_(nullptr), espnow_task_handle_(nullptr), rc_task_handle_(nullptr) {
+      serial_jtag_driver_handle_(nullptr), core_process_task_handle_(nullptr), rc_task_handle_(nullptr) {
     ESP_LOGI(TAG, "OtaService created");
 }
+
+
 
 OtaService::~OtaService() {
     if (ota_task_handle_) {
@@ -25,6 +29,10 @@ OtaService::~OtaService() {
 
 esp_err_t OtaService::initialize() {
     if (initialized_) return ESP_OK;
+
+    Core::BridgeCore& core = Core::BridgeCore::get_instance();
+    serial_jtag_driver_handle_ =  &core.get_serial_jtag_driver().get_task_handle();
+    core_process_task_handle_  =  &core.get_task_handle();
 
     ESP_LOGI(TAG, "Initializing OtaService...");
     initialized_ = true;
@@ -62,35 +70,37 @@ esp_err_t OtaService::start_ota(const char* url) {
 
 void OtaService::suspend_tasks() {
     // UART 태스크 중지
-    if (uart_task_handle_ && eTaskGetState(uart_task_handle_) != eDeleted) {
-        vTaskSuspend(uart_task_handle_);
+    if (*serial_jtag_driver_handle_ && eTaskGetState(*serial_jtag_driver_handle_) != eDeleted) {
+        vTaskSuspend(*serial_jtag_driver_handle_);
     }
 
     // ESP-NOW 태스크 중지
-    if (espnow_task_handle_ && eTaskGetState(espnow_task_handle_) != eDeleted) {
-        vTaskSuspend(espnow_task_handle_);
+    if (*core_process_task_handle_ && eTaskGetState(*core_process_task_handle_) != eDeleted) {
+        vTaskSuspend(*core_process_task_handle_);
     }
 
     // RC 태스크 중지
-    if (rc_task_handle_ && eTaskGetState(rc_task_handle_) != eDeleted) {
-        vTaskSuspend(rc_task_handle_);
+    if (*rc_task_handle_ && eTaskGetState(*rc_task_handle_) != eDeleted) {
+        vTaskSuspend(*rc_task_handle_);
     }
 
     ESP_LOGI(TAG, "Tasks suspended for OTA");
 }
+ 
+
 
 void OtaService::resume_tasks() {
     // 태스크 재개
-    if (uart_task_handle_ && eTaskGetState(uart_task_handle_) == eSuspended) {
-        vTaskResume(uart_task_handle_);
+    if (*serial_jtag_driver_handle_ && eTaskGetState(*serial_jtag_driver_handle_) == eSuspended) {
+        vTaskResume(*serial_jtag_driver_handle_);
     }
 
-    if (espnow_task_handle_ && eTaskGetState(espnow_task_handle_) == eSuspended) {
-        vTaskResume(espnow_task_handle_);
+    if (*core_process_task_handle_ && eTaskGetState(*core_process_task_handle_) == eSuspended) {
+        vTaskResume(*core_process_task_handle_);
     }
 
-    if (rc_task_handle_ && eTaskGetState(rc_task_handle_) == eSuspended) {
-        vTaskResume(rc_task_handle_);
+    if (*rc_task_handle_ && eTaskGetState(*rc_task_handle_) == eSuspended) {
+        vTaskResume(*rc_task_handle_);
     }
 
     ESP_LOGI(TAG, "Tasks resumed after OTA");
