@@ -1,7 +1,7 @@
 #include <unity.h>
 #include <esp_heap_caps.h>
-#include "core/queue_manager.h"
-#include "drivers/wifi_driver.h"
+#include "queue_manager.h"
+#include "wifi_driver.h"
 
 // 테스트 헬퍼 함수들
 static void test_psram_allocation() {
@@ -28,7 +28,7 @@ static void test_queue_manager() {
 
     // 패킷 큐잉 테스트
     const uint8_t test_data[] = {0x01, 0x02, 0x03, 0x04};
-    ret = qm.enqueue_packet(test_data, sizeof(test_data), Types::PacketType::RAW_DATA);
+    ret = qm.enqueue_packet(test_data, sizeof(test_data), Types::DataSource::UART_SERIAL);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 
     TEST_ASSERT_EQUAL(1, qm.get_packet_queue_size());

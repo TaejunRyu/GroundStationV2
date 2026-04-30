@@ -1,5 +1,6 @@
 # 빌드 결과물 폴더 (가장 중요)
 build/
+test/
 
 # Python 컴파일 파일
 __pycache__/
