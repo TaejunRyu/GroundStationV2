@@ -20,7 +20,6 @@ namespace Core {
 }
 
 
-
 namespace Drivers {
 
 class SerialJtagDriver {
@@ -37,7 +36,7 @@ public:
     void deinitialize();
 
     // 데이터 송수신
-    esp_err_t send_data(const uint8_t* data, size_t len);
+    esp_err_t send_data(const uint8_t* data, const size_t len);
     esp_err_t receive_data(uint8_t* buffer, size_t max_len, size_t& actual_len, uint32_t timeout_ms = 100);
     
     esp_err_t start(void);
@@ -59,7 +58,6 @@ public:
     void register_select_callback(void);
     void unregister_select_callback(void);
 
-    static void set_queue_manager(Core::QueueManager* qm) { queue_mgr_ = qm; }
     static void rx_task(void *pvParameters);
 
     // tx_task 실행..
@@ -81,8 +79,6 @@ private:
     // Static callback wrapper for USB Serial JTAG
     static void select_notif_callback(usj_select_notif_t event, int* task_woken);
     static SemaphoreHandle_t rx_sem_;
-    static Core::QueueManager* queue_mgr_; // 드라이버에서 queue manager에 접근할 수 있도록 static 함수 제공
-    //static SerialJtagDriver * serial_jtag_driver_;  //callback 함수에서 자신의 멤버에 접근할 수 있도록 static 멤버에 자기 자신 포인터 저장
     static const char* TAG;
 };
 

@@ -28,10 +28,6 @@
 namespace Drivers {
 
 const char* SerialJtagDriver::TAG = "SERIAL_JTAG";
-// Global select callback for static callback function
-//static usj_select_notif_callback_t g_select_callback = nullptr;
-Core::QueueManager* SerialJtagDriver::queue_mgr_ = nullptr;
-//SerialJtagDriver* SerialJtagDriver::serial_jtag_driver_ = nullptr;
 SemaphoreHandle_t SerialJtagDriver::rx_sem_ = nullptr;
 /**
  * @brief Construct a new Serial Jtag Driver:: Serial Jtag Driver object    
@@ -91,7 +87,6 @@ void SerialJtagDriver::deinitialize() {
         rx_sem_ = nullptr;
     }
     usb_serial_jtag_driver_uninstall();
-    //event_queue_ = nullptr;
     initialized_ = false;
     ESP_LOGI(TAG, "Serial JTAG deinitialized");
 }
@@ -103,31 +98,30 @@ void SerialJtagDriver::deinitialize() {
  * @param len 전송할 데이터 길이
  * @return esp_err_t 
  */
-esp_err_t SerialJtagDriver::send_data(const uint8_t* data, size_t len) {
+esp_err_t SerialJtagDriver::send_data(const uint8_t* data, const size_t len) {
     if (!initialized_) {
         ESP_LOGE(TAG, "Serial JTAG not initialized");
         return ESP_ERR_INVALID_STATE;
     }
-
+    
     if (!data || len == 0) return ESP_ERR_INVALID_ARG;
 
-    if(usb_serial_jtag_write_ready()){
-        int written = usb_serial_jtag_write_bytes(data, len,0 /* pdMS_TO_TICKS(100)*/);
-        if (written < 0) {
-            ESP_LOGE(TAG, "Serial JTAG write error: %s", esp_err_to_name(ESP_FAIL));
-            return ESP_FAIL;
-        }
+    // 1. 타임아웃을 적용한 쓰기 (하드웨어 FIFO 버퍼 대기)
+    // 0(Non-blocking) 대신 아주 짧은 틱을 주어 버퍼가 비워질 기회를 줍니다.
+    int written = usb_serial_jtag_write_bytes(data, len, pdMS_TO_TICKS(10));
 
-        if (written < (int)len) {
-            ESP_LOGW(TAG, "Incomplete Serial JTAG transmission: %d / %u bytes", written, len);
-            return ESP_ERR_TIMEOUT;
-        }
+    if (written < 0) {
+        // 하드웨어 오류 발생 시
+        return ESP_FAIL; 
+    }
 
-        return ESP_OK;
-    }else{
-        ESP_LOGW(TAG, "Serial JTAG not ready for writing");
+    if (written < (int)len) {
+        // 버퍼 가득 참 (일부 데이터만 전송됨)
+        // 드론 비행 중이라면 여기서 대기(Block)하기보다 유실을 허용하고 경고만 남기는 것이 안전할 수 있음
         return ESP_ERR_TIMEOUT;
     }
+
+    return ESP_OK;
 }
 
 /**
@@ -232,7 +226,7 @@ void SerialJtagDriver::rx_task(void* pvParameters) {
                     if (mavlink_parse_char(MAVLINK_COMM_3, buffer[ii], &msg, &status)) {                        
                         //ESP_LOGI(TAG, "Mavlink Done [Seq: %u, Index: %zu/%d]", msg.seq, ii, len);                       
                         uint16_t mav_len = mavlink_msg_to_send_buffer(buf, &msg);
-                        self->queue_mgr_->enqueue_packet(buf, mav_len, Types::DataSource::UART_SERIAL);    
+                        bridge.get_queue_manager().enqueue_packet(buf, mav_len, Types::DataSource::UART_SERIAL);    
                     }
                 }
             }

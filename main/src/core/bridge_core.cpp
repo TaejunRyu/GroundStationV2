@@ -160,16 +160,11 @@ esp_err_t BridgeCore::start() {
 
     ESP_LOGI(TAG, "Starting BridgeCore...");
 
-    // 콜백 설정
-    wifi_driver_->set_connect_callback([this]() { on_wifi_connected(); });
-    wifi_driver_->set_disconnect_callback([this]() { on_wifi_disconnected(); });
-
+ 
     // 데이터 수신 콜백 설정 (Wi-Fi와 Serial JTAG 모두)
     // Wi-Fi와 Serial JTAG에서 데이터가 들어왔을 때 on_data_received를 호출하도록 설정
     //wifi_driver_->set_data_callback([this](const uint8_t* data, size_t len, Types::DataSource source) {on_data_received(data, len, source);});
 
-    // 타이머 콜백 설정 (Serial JTAG 폴링)  타이머는 100ms마다 on_timer_tick을 호출하도록 설정
-    // 타이머는 단순히 callback함수를 실행시키는 서비스를 제공하므로, 타이머 서비스에서 on_timer_tick을 호출하도록 설정
    
     // Wi-Fi 설정 및 시작
     Types::WiFiConfig wifi_config = {
@@ -212,8 +207,8 @@ esp_err_t BridgeCore::start() {
         ESP_LOGE(TAG, "Failed to start Serial JTAG driver");
         return ret;        
     }  
-    serial_jtag_driver_->set_queue_manager(queue_manager_.get()); // Serial JTAG 드라이버에 QueueManager 포인터 전달
-  
+    
+    
     // 타이머 시작
     ret = timer_service_->start();
     if (ret != ESP_OK) {
@@ -225,10 +220,17 @@ esp_err_t BridgeCore::start() {
     this->start_task();
     serial_jtag_driver_->start_task();
 
-    // callback 등록
-    wifi_driver_->register_espnow_callbacks(); // ESP-NOW 콜백 등록
+    // 콜백 설정
+    wifi_driver_->set_connect_callback([this]() { on_wifi_connected(); });
+    wifi_driver_->set_disconnect_callback([this]() { on_wifi_disconnected(); });
+     // ESP-NOW 콜백 등록
+    wifi_driver_->register_espnow_callbacks();
     wifi_driver_->enable_udp_recv();
-    serial_jtag_driver_->register_select_callback(); // Serial JTAG select 콜백 등록
+    // Serial JTAG select 콜백 등록
+    serial_jtag_driver_->register_select_callback(); 
+    //  TimerService 콜백 등록
+    // 타이머 콜백 설정 (Serial JTAG 폴링)  타이머는 100ms마다 on_timer_tick을 호출하도록 설정
+    // 타이머는 단순히 callback함수를 실행시키는 서비스를 제공하므로, 타이머 서비스에서 on_timer_tick을 호출하도록 설정
     timer_service_->set_timer_callback([this]() { on_timer_tick(); });
    
     system_state_ = Types::SystemState::RUNNING;
