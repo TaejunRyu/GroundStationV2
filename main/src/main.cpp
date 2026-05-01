@@ -118,15 +118,15 @@ void app_main(void) {
         ESP_LOGI(TAG, "Restarting system...");
         esp_restart();
     }
-
+    
     ESP_LOGI(TAG, "System initialization complete");
-    led_strip.set_status_ok();
+    bridge.get_led_strip_driver().set_status_ok();
 
     // 2. BridgeCore 시작 (메인 루프)
     ret = bridge.start();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BridgeCore start failed: %s", esp_err_to_name(ret));
-        led_strip.set_status_error();
+        bridge.get_led_strip_driver().set_status_error();
         // 필요 시 여기서도 esp_restart()를 호출할 수 있습니다.
     }
 

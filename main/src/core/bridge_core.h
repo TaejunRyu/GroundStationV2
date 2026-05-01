@@ -43,6 +43,14 @@ public:
     BridgeCore& operator=(const BridgeCore&) = delete;
     ~BridgeCore();
 
+    // 싱글톤 인스턴스 접근 메서드
+    // 🌟 get_instance() 메서드 구현
+    static BridgeCore& get_instance() {
+        static BridgeCore* instance = new BridgeCore(); // 힙에 할당하여 소멸 순서 꼬임 방지
+        return *instance;
+    }
+
+
     esp_err_t initialize();
     void deinitialize();
     esp_err_t start();
@@ -56,13 +64,6 @@ public:
     void on_data_received(const uint8_t* data, size_t len, Types::DataSource source);
     void on_timer_tick();
     
-    // 싱글톤 인스턴스 접근 메서드
-    // 🌟 get_instance() 메서드 구현
-    static BridgeCore& get_instance() {
-        static BridgeCore* instance = new BridgeCore(); // 힙에 할당하여 소멸 순서 꼬임 방지
-        return *instance;
-    }
-
     // 서비스 및 드라이버 접근자 (참조자로만 넘뎌준다)
     Drivers::WiFiDriver& get_wifi_driver() { return *wifi_driver_; }
     Drivers::SerialJtagDriver& get_serial_jtag_driver() { return *serial_jtag_driver_; }
