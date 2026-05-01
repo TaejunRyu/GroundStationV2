@@ -10,7 +10,6 @@ idf_component_register(
     SRCS 
         "src/main.cpp"
         "src/drivers/led_strip_driver.cpp"
-
         "src/drivers/adc_driver.cpp"
         "src/drivers/flysky_sensor.cpp"
         "src/drivers/led_driver.cpp"

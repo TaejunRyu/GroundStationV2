@@ -15,9 +15,9 @@
 // USB Serial JTAG select callback types
 #include "driver/usb_serial_jtag_select.h"
 
-namespace Core {
-    class QueueManager;
-}
+// namespace Core {
+//     class QueueManager;
+// }
 
 
 namespace Drivers {
