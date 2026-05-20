@@ -208,12 +208,12 @@ esp_err_t WiFiDriver::init_espnow(const Types::EspNowConfig& config) {
   
     
     // 드론 MAC 주소 저장 - Hardcoded 값으로 설정
-    drone_mac_[0] = 0xB0; 
-    drone_mac_[1] = 0xCB; 
-    drone_mac_[2] = 0xD8; 
-    drone_mac_[3] = 0xD7; 
-    drone_mac_[4] = 0x2E; 
-    drone_mac_[5] = 0xB0;
+    drone_mac_[0] = 0xDC; 
+    drone_mac_[1] = 0xB4; 
+    drone_mac_[2] = 0xD9; 
+    drone_mac_[3] = 0x1F; 
+    drone_mac_[4] = 0x56; 
+    drone_mac_[5] = 0x5C;
     
     // Peer 등록 - drone_mac_을 사용하여 send_espnow와 일관성 유지
     esp_now_peer_info_t peer_info = {};

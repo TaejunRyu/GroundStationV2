@@ -11,7 +11,7 @@ namespace Utils {
 const char* ConfigManager::TAG = "CONFIG_MANAGER";
 
 bool ConfigManager::initialized_ = false;
-uint8_t ConfigManager::drone_mac_[6]  = {0xB0, 0xCB, 0xD8, 0xD7, 0x2E, 0xB0}; // 드론의 MAC 주소 기본값 (환경변수나 하드코딩된 값 사용)
+uint8_t ConfigManager::drone_mac_[6]  = {0xDC, 0xB4, 0xD9, 0x1F, 0x56, 0x5C}; // 드론의 MAC 주소 기본값 (환경변수나 하드코딩된 값 사용)
 uint8_t ConfigManager::bridge_mac_[6] = {0x1C, 0xDB, 0xD4, 0xAE, 0x82, 0x04}; // 기본값 설정 (환경변수나 하드코딩된 값 사용)
 
 
